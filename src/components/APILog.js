@@ -110,6 +110,23 @@ const APILog = () => {
     setDetailLoading(false);
   };
 
+   // ✅ Đóng modal khi nhấn ESC
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        closeDetailModal();
+      }
+    };
+
+    if (showDetail) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showDetail]);
+
   // ✅ Hàm copy an toàn cho cả HTTP & HTTPS
   const handleCopy = async () => {
     const text = detail ? JSON.stringify(detail.data, null, 2) : "";
