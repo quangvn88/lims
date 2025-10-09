@@ -5,10 +5,9 @@ import BarcodeImg from "./BarcodeImg";
 import logoPetro from "../assets/logo_petro.png";
 import { BASE_URL, API, API_USER, API_PASSWORD } from "../config";
 
-
-const YCTN = ({ width = 600 }) => {
+const YCTN = ({ width = 450 }) => {
   const [searchParams] = useSearchParams();
-  const maMau = searchParams.get("maMau") || "DEFAULT_CODE";
+  const maMau = searchParams.get("maMau") || "0123456789";
 
   const [info, setInfo] = useState(null);
 
@@ -16,12 +15,11 @@ const YCTN = ({ width = 600 }) => {
     const fetchInfo = async () => {
       try {
         const token = btoa(`${API_USER}:${API_PASSWORD}`);
-
         const res = await fetch(`${BASE_URL}${API}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Basic ${token}`
+            Authorization: `Basic ${token}`,
           },
           body: JSON.stringify({
             FUNC: "ZFM_YCTN_INFO",
@@ -38,7 +36,6 @@ const YCTN = ({ width = 600 }) => {
         });
 
         const data = await res.json();
-        console.log("Dữ liệu nhận được:", data);
         if (data?.RESPONSE?.IT_DATA?.length > 0) {
           setInfo(data.RESPONSE.IT_DATA[0]);
         } else {
@@ -48,85 +45,126 @@ const YCTN = ({ width = 600 }) => {
         console.error("Lỗi gọi API:", err);
       }
     };
-
     fetchInfo();
   }, [maMau]);
 
   return (
-    <div style={{ width: "100%", maxWidth: `${width}px`, margin: "auto" }}>
-      <table
+    <div
+      style={{
+        width: "100%",
+        maxWidth: `${width}px`,
+        margin: "auto",
+        border: "2px solid black",
+        fontFamily: "Arial, sans-serif",
+        fontSize: "13px",
+      }}
+    >
+      {/* Header */}
+      <div
         style={{
-          width: "100%",
-          border: "1px solid black",
-          fontSize: "12px",
-          borderCollapse: "collapse",
-          padding: "10px",        
-          boxSizing: "border-box"
+          display: "flex",
+          alignItems: "center",
+          padding: "10px",
+          borderBottom: "1px solid black",
         }}
       >
-        <tbody>
-          {/* Header */}
-          <tr>
-            <td style={{ width: "30%", textAlign: "center", padding: "10px" }}>
-              <img
-                src={logoPetro}
-                alt="Logo"
-                style={{ maxWidth: "100px", height: "auto" }}
-              />
-            </td>
-            <td style={{ width: "70%", textAlign: "center", fontWeight: "bold" }}>
-              <div style={{ fontSize: "20px" }}>
-                TẬP ĐOÀN XĂNG DẦU VIỆT NAM
-              </div>
-              <span style={{ fontWeight: "normal", fontSize: "16px" }}>
-                VPCT Petrolimex Sài Gòn
-              </span>
-            </td>
-          </tr>
+        <img
+          src={logoPetro}
+          alt="Logo"
+          style={{ width: "60px", height: "60px", marginRight: "10px" }}
+        />
+        <div style={{ flex: 1, textAlign: "center", lineHeight: "1.4" }}>
+          <div style={{ fontWeight: "bold" }}>TẬP ĐOÀN XĂNG DẦU VIỆT NAM</div>
+          <div style={{ fontWeight: "bold" }}>CÔNG TY XĂNG DẦU B12</div>
+        </div>
+      </div>
 
-          {/* QR + Barcode (2 cột căn giữa, bảng lồng nhau) */}
-          <tr>
-            <td colSpan={2} style={{ textAlign: "center", padding: "10px 0" }}>
-              <table style={{ width: "100%" }}>
-                <tbody>
-                  <tr>
-                    <td style={{ width: "50%", textAlign: "center", verticalAlign: "middle" }}>
-                      <QRCodeImg 
-                        data={`${BASE_URL}/lims/view?maMau=${maMau}`}
-                        width={100} />
-                    </td>
-                    <td style={{ width: "50%", textAlign: "center", verticalAlign: "middle" }}>
-                      <BarcodeImg data={maMau} />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </td>
-          </tr>
+      {/* Barcode */}
+      <div style={{ textAlign: "center", padding: "10px 0" }}>
+        <BarcodeImg data={maMau} />
+      </div>
 
-          {/* Thông tin khác */}
-          <tr>
-            <td colSpan={2} style={{ padding: "10px" }}>
-              {!info ? (
-                <p>Đang tải dữ liệu...</p>
-              ) : (
-                <>
-                  <p><b>MÃ MẪU:</b> {maMau} <br /><i>(CODE)</i></p>
-                  <p><b>LOẠI HÀNG:</b> {info?.CARGO || "—"} <br /><i>Good Type</i></p>
-                  <p><b>SỐ NIÊM:</b> {info?.SEAL_NO || "—"} <br /><i>Seal No.</i></p>
-                  <p><b>VỊ TRÍ LẤY MẪU:</b> {info?.VTLM_T || "—"} <br /><i>Sampling Collected Location</i></p>
-                  <p><b>NƠI XUẤT:</b> {info?.NOI_XUAT || "—"} <br /><i>Place of Release</i></p>
-                  <p><b>NƠI LẤY:</b> {info?.SAMPLING_LOCATION || "—"} <br /><i>Sampling Location</i></p>
-                  <p><b>NGÀY LẤY – GIỜ:</b> {info?.ISSUE_DATE || "—"} <br /><i>Sampling Date – Time</i></p>
-                  <p><b>NGÀY HẾT HẠN LƯU:</b> {info?.SAMPLE_EXP || "—"} <br /><i>Retention Expiry</i></p>
-                  <p><b>NGƯỜI LẤY:</b> {info?.TAKEN_BY || "—"} <br /><i>Sampler</i></p>
-                  <p><b>SỐ LƯỢNG - ĐVT:</b> {info?.MENGE_LM ? `${info.MENGE_LM} (${info?.MEINS || ""})` : "—"} <br /><i>Quantity - Unit</i></p>
-                </>
-              )}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      {/* Info */}
+      <div style={{ borderTop: "1px solid black", padding: "10px" }}>
+        {!info ? (
+          <p>Đang tải dữ liệu...</p>
+        ) : (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              lineHeight: "1.5",
+            }}
+          >
+            <tbody>
+              {/* --- QR + MÃ MẪU + SỐ NIÊM + LOẠI HÀNG --- */}
+              <tr>
+                <td colSpan={2} style={{ position: "relative", paddingRight: "100px" }}>
+                  {/* QR góc phải */}
+                  <div style={{ position: "absolute", top: "0", right: "0" }}>
+                    <QRCodeImg
+                      data={`${BASE_URL}/app/yctn?maMau=${maMau}`}
+                      width={90}
+                    />
+                  </div>
+
+                  {/* Phần nội dung 3 dòng đầu */}
+                  <div style={{ display: "table", width: "100%" }}>
+                    <div style={{ display: "table-row" }}>
+                      <div style={{ display: "table-cell", width: "160px" }}>
+                        <b>MÃ MẪU</b>
+                        <div style={{ fontSize: "11px" }}>Sample ID</div>
+                      </div>
+                      <div style={{ display: "table-cell" }}>
+                        {maMau}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "table-row" }}>
+                      <div style={{ display: "table-cell" }}>
+                        <b>SỐ NIÊM</b>
+                        <div style={{ fontSize: "11px" }}>Seal No</div>
+                      </div>
+                      <div style={{ display: "table-cell" }}>
+                        {info?.SEAL_NO || "SEL01"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "table-row" }}>
+                      <div style={{ display: "table-cell" }}>
+                        <b>LOẠI HÀNG</b>
+                        <div style={{ fontSize: "11px" }}>Goods Type</div>
+                      </div>
+                      <div style={{ display: "table-cell" }}>
+                        {info?.CARGO || "000000000000601002"}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+
+              {/* --- Các dòng thông tin khác --- */}
+              {[
+                ["VỊ TRÍ LẤY MẪU", "Sampling Collected Location", info?.VTLM_T || "Mẫu đáy"],
+                ["NƠI XUẤT", "Place of Release", info?.NOI_XUAT || "-"],
+                ["NƠI LẤY", "Sampling Location", info?.SAMPLING_LOCATION || "Bể chứa"],
+                ["NGÀY/GIỜ LẤY", "Sampling Date Time", info?.ISSUE_DATE || "26/09/2025 10:34 AM"],
+                ["NGÀY HẾT HẠN LƯU", "Sample Retention Expiry Date", info?.SAMPLE_EXP || "26/10/2025"],
+                ["NGƯỜI LẤY", "Sampler", info?.TAKEN_BY || "Nguyễn Văn An"],
+                ["NGƯỜI NHẬN", "Receiver", info?.RECEIVER || "Nguyễn Thị Lan Hương"],
+              ].map(([label, sub, value], idx) => (
+                <tr key={idx}>
+                  <td style={{ width: "160px", verticalAlign: "top" }}>
+                    <b>{label}</b>
+                    <div style={{ fontSize: "11px" }}>{sub}</div>
+                  </td>
+                  <td style={{ verticalAlign: "top" }}>{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 };
