@@ -4,6 +4,9 @@ import APILog from "./components/APILog";
 import YCTN from "./components/YCTN";
 import SM37 from "./components/SM37";
 import SM66 from "./components/SM66"; 
+import CHAT from "./components/CHAT"; 
+import CHXDGMap from "./components/CHXDGMap"; 
+
 
 const Home = () => {
   const navigate = useNavigate();
@@ -24,6 +27,12 @@ const Home = () => {
         <button className="btn btn-primary btn-lg" onClick={() => navigate("/yctn?maMau=123456789")}>
           YCTN
         </button>
+        <button className="btn btn-primary btn-lg" onClick={() => navigate("/chat")}>
+          CHAT
+        </button>
+        <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-gmap")}>
+          CHXD MAP
+        </button>
       </div>
     </div>
   );
@@ -38,6 +47,9 @@ function App() {
         <Route path="/sm66" element={<SM66 />} />
         <Route path="/apilog" element={<APILog />} />
         <Route path="/yctn" element={<YCTN />} />        
+        <Route path="/chat" element={<CHAT />} />    
+        <Route path="/chxd-gmap" element={<CHXDGMap />} />
+        <Route path="/chxd-gmap/:CHXD_ID" element={<CHXDGMap />} />
       </Routes>
     </Router>
   );

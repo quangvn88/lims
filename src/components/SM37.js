@@ -5,6 +5,7 @@ import { getToday } from "../utils/common";
 const SM37 = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   // Gọi API danh sách job SM37
   const fetchData = async () => {
@@ -19,7 +20,7 @@ const SM37 = () => {
         },
         body: JSON.stringify({
           FUNC: "ZFM_SM37_LIST",
-          DATA: { I_DATE_F: getToday() }, // mặc định ngày hôm nay
+          DATA: { I_DATE_F: getToday() },
         }),
       });
 
@@ -41,6 +42,43 @@ const SM37 = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Xử lý sắp xếp
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedData = React.useMemo(() => {
+    let sortableData = [...data];
+    if (sortConfig.key !== null) {
+      sortableData.sort((a, b) => {
+        const valA = a[sortConfig.key];
+        const valB = b[sortConfig.key];
+        if (!isNaN(valA) && !isNaN(valB)) {
+          // Nếu là số
+          return sortConfig.direction === "asc"
+            ? Number(valA) - Number(valB)
+            : Number(valB) - Number(valA);
+        } else {
+          // Nếu là chuỗi
+          return sortConfig.direction === "asc"
+            ? String(valA).localeCompare(String(valB))
+            : String(valB).localeCompare(String(valA));
+        }
+      });
+    }
+    return sortableData;
+  }, [data, sortConfig]);
+
+  // Helper hiển thị icon sort
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return "⇅";
+    return sortConfig.direction === "asc" ? "↑" : "↓";
+  };
 
   return (
     <div className="container-fluid p-0">
@@ -67,21 +105,31 @@ const SM37 = () => {
 
       {/* Table dữ liệu */}
       <div>
-        {data.length > 0 ? (
+        {sortedData.length > 0 ? (
           <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
             <table className="table table-bordered table-hover mb-0">
               <thead className="table-light sticky-top" style={{ top: 0 }}>
                 <tr>
-                  <th style={{ width: "40px", textAlign: "center" }}>⚠</th>                    
-                  <th>JOBNAME</th>
-                  <th>DURATION</th>
-                  <th>STRTDATE</th>
-                  <th>STRTTIME</th>                  
-                  <th>PROGNAME</th>
+                  <th style={{ width: "40px", textAlign: "center" }}>⚠</th>
+                  <th onClick={() => handleSort("JOBNAME")} style={{ cursor: "pointer" }}>
+                    JOBNAME {getSortIcon("JOBNAME")}
+                  </th>
+                  <th onClick={() => handleSort("DURATION")} style={{ cursor: "pointer" }}>
+                    DURATION {getSortIcon("DURATION")}
+                  </th>
+                  <th onClick={() => handleSort("STRTDATE")} style={{ cursor: "pointer" }}>
+                    STRTDATE {getSortIcon("STRTDATE")}
+                  </th>
+                  <th onClick={() => handleSort("STRTTIME")} style={{ cursor: "pointer" }}>
+                    STRTTIME {getSortIcon("STRTTIME")}
+                  </th>
+                  <th onClick={() => handleSort("PROGNAME")} style={{ cursor: "pointer" }}>
+                    PROGNAME {getSortIcon("PROGNAME")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((log, idx) => (
+                {sortedData.map((log, idx) => (
                   <tr key={idx}>
                     <td style={{ textAlign: "center" }}>
                       {Number(log.DURATION) > 200 && (
@@ -91,10 +139,10 @@ const SM37 = () => {
                       )}
                     </td>
                     <td>{log.JOBNAME}</td>
-                    <td>{log.DURATION}</td>                    
+                    <td>{log.DURATION}</td>
                     <td>{log.STRTDATE}</td>
                     <td>{log.STRTTIME}</td>
-                    <td>{log.PROGNAME}</td>                                        
+                    <td>{log.PROGNAME}</td>
                   </tr>
                 ))}
               </tbody>
