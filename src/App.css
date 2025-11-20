@@ -282,6 +282,15 @@ body, html, #root, .App {
 
 .pulse-label {
   animation: pulseLabel 1.5s infinite;
+  background: rgba(255,255,255,0.95);
+  border: 2px solid #d33;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: bold;
+  display: inline-block;
+  white-space: nowrap;
+  text-align: left;
 }
 
 .distance-tooltip {
@@ -293,3 +302,29 @@ body, html, #root, .App {
   padding: 2px 4px;
   font-size: 11px;
 }
+
+.price-up { color: #d33 !important; }
+.price-down { color: #008000 !important; }
+
+.top-center-alert-wrapper {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  z-index: 5000;            /* luôn nằm trên map + controls */
+  pointer-events: none;     /* không ảnh hưởng layout */
+  opacity: 0;
+  transition: all 0.35s ease;
+}
+
+.top-center-alert-wrapper.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.top-center-alert {
+  min-width: 280px;
+  pointer-events: auto;     /* click close được */
+}
+
+

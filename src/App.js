@@ -6,6 +6,7 @@ import SM37 from "./components/SM37";
 import SM66 from "./components/SM66"; 
 import CHAT from "./components/CHAT"; 
 import CHXDGMap from "./components/CHXDGMap"; 
+import CHXDLocation from "./components/CHXDLocation"; 
 
 
 const Home = () => {
@@ -33,6 +34,9 @@ const Home = () => {
         <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-gmap")}>
           CHXD MAP
         </button>
+        <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-location/input")}>
+          CHXD Location
+        </button>
       </div>
     </div>
   );
@@ -50,6 +54,8 @@ function App() {
         <Route path="/chat" element={<CHAT />} />    
         <Route path="/chxd-gmap" element={<CHXDGMap />} />
         <Route path="/chxd-gmap/:CHXD_ID" element={<CHXDGMap />} />
+        <Route path="/chxd-location/input/:CHXD_ID" element={<CHXDLocation />} />
+        <Route path="/chxd-location/com/:CHXD_ID" element={<CHXDLocation />} />
       </Routes>
     </Router>
   );

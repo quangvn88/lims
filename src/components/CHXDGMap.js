@@ -15,6 +15,8 @@ const CHXDGMap = () => {
   const [showLines, setShowLines] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapType, setMapType] = useState("satellite");
+  const [fuelType, setFuelType] = useState("xang92");
+  const [showControls, setShowControls] = useState(true);
 
   const handleMapTypeChange = (type) => {
     setMapType(type);
@@ -50,12 +52,13 @@ const CHXDGMap = () => {
       const res = await fetch(`${BASE_URL}${API}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
-        body: JSON.stringify({ FUNC: "ZFM_CHXD_GMAP" }),
+        body: JSON.stringify({ FUNC: "ZFM_CHXD_GMAP", DATA: { I_TYPE: "99"} }),
       });
+
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
+      const data = await res.json();      
       const list =
-        Array.isArray(data?.RESPONSE?.T_DATA) && data.RESPONSE.T_DATA.length > 0
+        Array.isArray(data?.RESPONSE?.T_DATA) && data.RESPONSE.T_DATA.length > 0 && 0 == 1
           ? data.RESPONSE.T_DATA.map(i => ({
               id: i.CHXD_ID,
               title: i.CHXD_TXT || "Cửa hàng không tên",
@@ -66,9 +69,14 @@ const CHXDGMap = () => {
               logo: i.LOGO || "PLX",
             })).filter(x => !isNaN(x.lat) && !isNaN(x.lng))
           : [
-              { id: "HN", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542 },
-              { id: "DN", title: "CHXD Petrolimex Đà Nẵng", lat: 16.0678, lng: 108.2208 },
-              { id: "HCM", title: "CHXD Petrolimex TP.HCM", lat: 10.7769, lng: 106.7009 },
+              { id: "HN", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500 },
+              { id: "HN1", title: "Hà Nội 1", lat: 21.0385, lng: 105.7542, price: 23500 },
+              { id: "HN2", title: "Hà Nội 2", lat: 21.0485, lng: 105.9542, price: 22500 },
+              { id: "HN3", title: "Hà Nội 3", lat: 21.0445, lng: 105.9242, price: 23000 },
+              { id: "HN4", title: "Hà Nội 4", lat: 21.0300, lng: 105.7342, price: 24500 },
+              { id: "HN5", title: "Hà Nội 5", lat: 21.0665, lng: 105.9442, price: 23500 },
+              { id: "DN", title: "CHXD Petrolimex Đà Nẵng", lat: 16.0678, lng: 108.2208, price: 23400 },
+              { id: "HCM", title: "CHXD Petrolimex TP.HCM", lat: 10.7769, lng: 106.7009, price: 23600 },
             ];
       setCoords(list);
     } catch (err) {
@@ -103,6 +111,7 @@ const CHXDGMap = () => {
 
     const target = coords.find(x => x.id === CHXD_ID);
     let nearest10 = [];
+    let nearest10Ids = [];
 
     if (target) {
       const getDistance = (a,b) => {
@@ -114,15 +123,30 @@ const CHXDGMap = () => {
         const x = Math.sin(dLat/2)**2 + Math.sin(dLon/2)**2 * Math.cos(lat1) * Math.cos(lat2);
         return 2*R*Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
       };
-      nearest10 = coords.filter(c => c.id !== target.id)
-        .sort((a,b) => getDistance(a,target)-getDistance(b,target))
+
+      nearest10 = coords
+        .filter(c => c.id !== target.id)
+        .sort((a,b) => getDistance(a,target) - getDistance(b,target))
         .slice(0,10)
-        .map(c => c.id);
+        .map(c => ({
+          ...c,
+          price_change: c.price !== undefined && target.price !== undefined 
+            ? c.price - target.price 
+            : 0
+        }));
+
+      nearest10Ids = nearest10.map(c => c.id);
     }
+
+    // Tạo map id -> price_change
+    const priceChangeMap = {};
+    nearest10.forEach(station => {
+      priceChangeMap[station.id] = station.price_change;
+    });
 
     coords.forEach(c => {
       const isTarget = c.id === CHXD_ID;
-      const isNearby = nearest10.includes(c.id);
+      const isNearby = nearest10Ids.includes(c.id);
 
       const iconUrl = c.logo === "PVOIL" ? process.env.PUBLIC_URL+"/logo_pvoil.png" : process.env.PUBLIC_URL+"/logo_plx.png";
       const markerIcon = L.icon({ iconUrl, iconSize: isTarget||isNearby?[34,34]:[28,28], iconAnchor:[17,34], popupAnchor:[0,-25] });
@@ -132,19 +156,48 @@ const CHXDGMap = () => {
       marker.on("mouseover", ()=>marker.openPopup());
       marker.on("mouseout", ()=>marker.closePopup());
 
-      const labelHTML = `<div style="
-        background: rgba(255,255,255,0.95);
-        border: 1.5px solid ${isTarget?"#d33":isNearby?"#ff8800":"#2a5599"};
-        border-radius:6px;
-        padding:2px 5px;
-        font-size:11px;
-        color:${isTarget?"#d33":isNearby?"#ff8800":"#2a5599"};
-        font-weight:${isTarget?"bold":"normal"};
-        display:inline-block;
-        white-space:nowrap;
-        margin-left:6px;
-        ${isTarget?"animation:pulseLabel 1.2s infinite":""};
-      ">${c.title.length>16?c.title.slice(0,16)+"…":c.title}</div>`;
+      // Giá chính
+      const priceHTML = c.price
+        ? `<span class="price-value" style="color:#008800;font-weight:bold;">⛽ ${c.price.toLocaleString()} đ/L</span>`
+        : "";
+
+      // Giá thay đổi (tăng/giảm)
+      const priceChange = priceChangeMap[c.id] || 0;
+      const priceChangeHTML = priceChange !== 0
+        ? `<span style="
+              margin-left: 4px;
+              font-weight: bold;
+              color: ${priceChange > 0 ? "#d33" : "#008000"};
+            ">
+              <i class="bi ${priceChange > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}"></i>
+              ${Math.abs(priceChange).toLocaleString()}đ
+          </span>`
+        : "";
+
+      // Kết hợp vào div chứa giá
+      const priceDivHTML = `<div class="price-container">${priceHTML} ${priceChangeHTML}</div>`;
+
+      // Cuối cùng chèn vào labelHTML
+      const labelHTML = `
+        <div style="
+          background: rgba(255,255,255,0.95);
+          border: 2px solid ${isTarget ? "#d33" : isNearby ? "#ff8800" : "#2a5599"};
+          border-radius: 6px;
+          padding: 2px 6px;
+          font-size: 11px;        
+          font-weight: ${isTarget ? "bold" : "normal"};
+          display: inline-block;
+          white-space: nowrap;
+          margin-left: 6px;
+          text-align: left;
+          ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
+        ">
+          <div>${c.title.length > 16 ? c.title.slice(0,16) + "…" : c.title}</div>
+          ${priceDivHTML}
+        </div>
+        `;
+
+
       const label = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });
       const textMarker = L.marker([c.lat,c.lng], { icon: label, interactive:false });
 
@@ -193,64 +246,123 @@ const CHXDGMap = () => {
 
   return (
     <div style={{ height: "100vh", position: "relative" }}>
-      {/* --- Bộ điều khiển (controls) góc phải --- */}
-      <div
-        className="d-flex flex-column align-items-end gap-2 position-absolute"
+      {/* Nút hiển thị/ẩn controls */}
+      <button
+        onClick={() => setShowControls(!showControls)}
         style={{
+          position: "absolute",
           top: 10,
           right: 10,
-          zIndex: 1000,
-          background: "rgba(255, 255, 255, 0.9)",
-          borderRadius: 10,
-          padding: "10px 12px",
+          zIndex: 1001,
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          border: "none",
+          background: "#2a5599",
+          color: "#fff",
+          cursor: "pointer",
           boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+          display: showControls ? "none" : "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: "bold",
         }}
       >
-        {/* Công tắc đường nối */}
-        <div className="form-check form-switch m-0">
-          <input
-            className="form-check-input"
-            type="checkbox"
-            id="toggleLines"
-            checked={showLines}
-            onChange={() => setShowLines(!showLines)}
-            style={{ cursor: "pointer" }}
-          />
-          <label
-            className="form-check-label ms-2"
-            htmlFor="toggleLines"
+        ☰
+      </button>
+
+      {/* --- Bộ điều khiển (controls) góc phải --- */}
+      {showControls && (
+        <div
+          className="d-flex flex-column align-items-end gap-2 position-absolute"
+          style={{
+            top: 10,
+            right: 10,
+            zIndex: 1000,
+            background: "rgba(255, 255, 255, 0.9)",
+            borderRadius: 10,
+            padding: "10px 12px",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+          }}
+        >
+          {/* Nút thu nhỏ */}
+          <button
+            onClick={() => setShowControls(false)}
             style={{
-              color: "#333",
-              fontWeight: 500,
-              fontSize: 13,
+              alignSelf: "flex-end",
+              border: "none",
+              background: "transparent",
               cursor: "pointer",
+              fontSize: 16,
+              fontWeight: "bold",
             }}
           >
-            Hiện đường nối
-          </label>
-        </div>
+            ✖
+          </button>
 
-        {/* Dropdown chọn loại bản đồ */}
-        <div style={{ width: 160 }}>
-          <label
-            htmlFor="mapType"
-            className="form-label mb-1"
-            style={{ fontWeight: "bold", fontSize: 13, color: "#333" }}
-          >
-            Loại bản đồ
-          </label>
-          <select
-            id="mapType"
-            className="form-select form-select-sm"
-            value={mapType}
-            onChange={(e) => handleMapTypeChange(e.target.value)}
-            style={{ fontSize: 13, cursor: "pointer" }}
-          >
-            <option value="satellite">🛰️ Vệ tinh</option>
-            <option value="street">🗺️ Đường phố</option>
-          </select>
+          {/* Công tắc đường nối */}
+          <div className="form-check form-switch m-0">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="toggleLines"
+              checked={showLines}
+              onChange={() => setShowLines(!showLines)}
+              style={{ cursor: "pointer" }}
+            />
+            <label
+              className="form-check-label ms-2"
+              htmlFor="toggleLines"
+              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer" }}
+            >
+              Hiện đường nối
+            </label>
+          </div>
+
+          {/* Dropdown chọn loại bản đồ */}
+          <div style={{ width: 160 }}>
+            <label
+              htmlFor="mapType"
+              className="form-label mb-1"
+              style={{ fontWeight: "bold", fontSize: 13, color: "#333" }}
+            >
+              Loại bản đồ
+            </label>
+            <select
+              id="mapType"
+              className="form-select form-select-sm"
+              value={mapType}
+              onChange={(e) => handleMapTypeChange(e.target.value)}
+              style={{ fontSize: 13, cursor: "pointer" }}
+            >
+              <option value="satellite">🛰️ Vệ tinh</option>
+              <option value="street">🗺️ Đường phố</option>
+            </select>
+          </div>
+
+          {/* Dropdown chọn loại xăng/dầu */}
+          <div style={{ width: 160, marginTop: 8 }}>
+            <label
+              htmlFor="fuelType"
+              className="form-label mb-1"
+              style={{ fontWeight: "bold", fontSize: 13, color: "#333" }}
+            >
+              Loại xăng/dầu
+            </label>
+            <select
+              id="fuelType"
+              className="form-select form-select-sm"
+              value={fuelType}
+              onChange={(e) => setFuelType(e.target.value)}
+              style={{ fontSize: 13, cursor: "pointer" }}
+            >
+              <option value="xang92">⛽ Xăng 92</option>
+              <option value="xang95">⛽ Xăng 95</option>
+              <option value="diezel">🛢️ Dầu Diesel</option>
+            </select>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Thông báo tải / lỗi */}
       {loading && (
@@ -295,7 +407,6 @@ const CHXDGMap = () => {
       <div id="map" style={{ height: "100vh", width: "100%" }} />
     </div>
   );
-
 };
 
 export default CHXDGMap;
