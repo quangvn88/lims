@@ -34,7 +34,7 @@ const Home = () => {
         <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-gmap")}>
           CHXD MAP
         </button>
-        <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-location/input")}>
+        <button className="btn btn-primary btn-lg" onClick={() => navigate("/chxd-location")}>
           CHXD Location
         </button>
       </div>
@@ -54,8 +54,7 @@ function App() {
         <Route path="/chat" element={<CHAT />} />    
         <Route path="/chxd-gmap" element={<CHXDGMap />} />
         <Route path="/chxd-gmap/:CHXD_ID" element={<CHXDGMap />} />
-        <Route path="/chxd-location/input/:CHXD_ID" element={<CHXDLocation />} />
-        <Route path="/chxd-location/com/:CHXD_ID" element={<CHXDLocation />} />
+        <Route path="/chxd-location/:CHXD_ID" element={<CHXDLocation />} />
       </Routes>
     </Router>
   );

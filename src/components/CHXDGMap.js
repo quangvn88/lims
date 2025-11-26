@@ -52,7 +52,7 @@ const CHXDGMap = () => {
       const res = await fetch(`${BASE_URL}${API}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
-        body: JSON.stringify({ FUNC: "ZFM_CHXD_GMAP", DATA: { I_TYPE: "99"} }),
+        body: JSON.stringify({ FUNC: "ZFM_CHXD_GMAP" }),
       });
 
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
