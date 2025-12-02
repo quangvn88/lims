@@ -17,32 +17,39 @@ const CHXDGMap = () => {
   const [mapType, setMapType] = useState("satellite");
   const [fuelType, setFuelType] = useState("xang92");
   const [showControls, setShowControls] = useState(true);
+  const [zoom, setZoom] = useState(6);
+
+  const getMarkerSize = (zoom) => {
+    if (zoom >= 16) return 44;
+    if (zoom >= 14) return 36;
+    if (zoom >= 12) return 30;
+    if (zoom >= 10) return 24;
+    if (zoom >= 8) return 20;
+    return 14;
+  };
+
+  const getFontSize = (zoom) => {
+    if (zoom >= 16) return 14;
+    if (zoom >= 14) return 12;
+    if (zoom >= 12) return 11;
+    return 10;
+  };
 
   const handleMapTypeChange = (type) => {
     setMapType(type);
-      if (!mapRef.current) return;
+    if (!mapRef.current) return;
+    // Chỉ remove tileLayer, giữ markerGroup
+    mapRef.current.eachLayer((layer) => {
+      if (layer instanceof L.TileLayer) mapRef.current.removeLayer(layer);
+    });
 
-      // Xóa lớp cũ
-      mapRef.current.eachLayer(layer => {
-        if (layer instanceof L.TileLayer) mapRef.current.removeLayer(layer);
-      });
+    const url =
+      type === "street"
+        ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-      // Chọn layer mới
-      let url = "";
-      switch (type) {
-        case "street":
-          url = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-          break;
-        default:
-          url = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-      }
-
-      L.tileLayer(url, {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(mapRef.current);
+    L.tileLayer(url, { maxZoom: 18, attribution: "&copy; OpenStreetMap contributors" }).addTo(mapRef.current);
   };
-
 
   // 1. Fetch dữ liệu
   const fetchCHXDList = async () => {
@@ -69,7 +76,7 @@ const CHXDGMap = () => {
               logo: i.LOGO || "PLX",
             })).filter(x => !isNaN(x.lat) && !isNaN(x.lng))
           : [
-              { id: "HN", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500 },
+              { id: "131008", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500 },
               { id: "HN1", title: "Hà Nội 1", lat: 21.0385, lng: 105.7542, price: 23500 },
               { id: "HN2", title: "Hà Nội 2", lat: 21.0485, lng: 105.9542, price: 22500 },
               { id: "HN3", title: "Hà Nội 3", lat: 21.0445, lng: 105.9242, price: 23000 },
@@ -89,6 +96,41 @@ const CHXDGMap = () => {
 
   useEffect(() => { fetchCHXDList(); }, []);
 
+  useEffect(() => {
+    if (!mapRef.current || !markerGroupRef.current) return;
+
+    const markerGroup = markerGroupRef.current;
+    const size = getMarkerSize(zoom);
+    const fontSize = getFontSize(zoom);
+
+    markerGroup.eachLayer(layer => {
+      // Marker icon
+      if (layer instanceof L.Marker && layer.options.icon.options.iconUrl) {
+        const oldIcon = layer.options.icon;
+        const newIcon = L.icon({
+          iconUrl: oldIcon.options.iconUrl,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size],
+          popupAnchor: [0, -25],
+        });
+        layer.setIcon(newIcon);
+      }
+
+      // Label text
+      if (layer instanceof L.Marker && layer.options.icon.options.className === "plx-label") {
+        const oldHtml = layer.options.icon.options.html;
+
+        // Thay font-size trong HTML
+        const newHtml = oldHtml.replace(/font-size:\s*\d+px/g, `font-size:${fontSize}px`);
+
+        layer.setIcon(L.divIcon({
+          ...layer.options.icon.options,
+          html: newHtml
+        }));
+      }
+    });
+  }, [zoom]);
+
   // 1. Khởi tạo map
   useEffect(() => {
     if (!mapRef.current) {
@@ -99,8 +141,13 @@ const CHXDGMap = () => {
       ).addTo(mapRef.current);
       markerGroupRef.current = L.featureGroup().addTo(mapRef.current);
       lineGroupRef.current = L.featureGroup().addTo(mapRef.current);
+
+      mapRef.current.on("zoomend", () => setZoom(mapRef.current.getZoom()));
+      setMapLoaded(true);
     }
   }, []);
+
+  const initialViewSet = useRef(false);
 
   // 3. Marker + label
   useEffect(() => {
@@ -145,11 +192,14 @@ const CHXDGMap = () => {
     });
 
     coords.forEach(c => {
+      const size = getMarkerSize(zoom);
+      const fs = getFontSize(zoom);
+
       const isTarget = c.id === CHXD_ID;
       const isNearby = nearest10Ids.includes(c.id);
 
       const iconUrl = c.logo === "PVOIL" ? process.env.PUBLIC_URL+"/logo_pvoil.png" : process.env.PUBLIC_URL+"/logo_plx.png";
-      const markerIcon = L.icon({ iconUrl, iconSize: isTarget||isNearby?[34,34]:[28,28], iconAnchor:[17,34], popupAnchor:[0,-25] });
+      const markerIcon = L.icon({ iconUrl, iconSize: [size, size], iconAnchor:[size / 2, size], popupAnchor:[0,-25] });
       const marker = L.marker([c.lat,c.lng], { icon: markerIcon }).bindPopup(`
         <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i><br/>☎️ ${c.phone || "N/A"}
       `);
@@ -178,37 +228,63 @@ const CHXDGMap = () => {
       const priceDivHTML = `<div class="price-container">${priceHTML} ${priceChangeHTML}</div>`;
 
       // Cuối cùng chèn vào labelHTML
-      const labelHTML = `
-        <div style="
-          background: rgba(255,255,255,0.95);
-          border: 2px solid ${isTarget ? "#d33" : isNearby ? "#ff8800" : "#2a5599"};
-          border-radius: 6px;
-          padding: 2px 6px;
-          font-size: 11px;        
-          font-weight: ${isTarget ? "bold" : "normal"};
-          display: inline-block;
-          white-space: nowrap;
-          margin-left: 6px;
-          text-align: left;
-          ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
-        ">
-          <div>${c.title.length > 16 ? c.title.slice(0,16) + "…" : c.title}</div>
-          ${priceDivHTML}
-        </div>
-        `;
+      if (zoom >= 10) {
+        const labelHTML = `
+          <div style="
+            background: rgba(255,255,255,0.95);
+            border: 2px solid ${isTarget ? "#d33" : isNearby ? "#ff8800" : "#2a5599"};
+            border-radius: 6px;
+            padding: 2px 6px;
+            font-size: 11px;        
+            font-weight: ${isTarget ? "bold" : "normal"};
+            display: inline-block;
+            white-space: nowrap;
+            margin-left: 6px;
+            text-align: left;
+            ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
+            opacity: ${zoom >= 10 ? 1 : 0};
+            transition: opacity 0.3s;
+          ">
+            <div>${c.title.length > 16 ? c.title.slice(0,16) + "…" : c.title}</div>
+            ${priceDivHTML}
+          </div>
+          `;
+        
+        const label = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });
+        const textMarker = L.marker([c.lat,c.lng], { icon: label, interactive:false });
+        markerGroup.addLayer(textMarker);
+      }      
 
-
-      const label = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });
-      const textMarker = L.marker([c.lat,c.lng], { icon: label, interactive:false });
-
-      markerGroup.addLayer(marker);
-      markerGroup.addLayer(textMarker);
+      markerGroup.addLayer(marker);      
     });
 
-    const bounds = L.latLngBounds(coords.map(c => [c.lat,c.lng]));
-    map.fitBounds(bounds, { padding:[60,60], maxZoom:15 });
+    if (!initialViewSet.current) {
+      const bounds = L.latLngBounds(coords.map(c => [c.lat,c.lng]));
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
 
-    if (target) map.setView([target.lat,target.lng], 13, { animate:true });
+      const target = coords.find(x => x.id === CHXD_ID);
+      if (target) map.setView([target.lat, target.lng], 13, { animate: true });
+
+      initialViewSet.current = true; // đánh dấu đã set view
+    }
+
+    // Cập nhật ẩn/hiện label khi zoom
+    map.on("zoomend", () => {
+      const z = map.getZoom();
+      markerGroup.eachLayer(layer => {
+        if (layer.options?.icon?.options?.className === "plx-label") {
+          // opacity = 0 khi zoom < 10, =1 khi zoom >= 13, còn giữa 10-13 thì tỉ lệ tuyến tính
+          if (z < 10) {
+            layer.getElement().style.opacity = 0;
+          } else if (z >= 13) {
+            layer.getElement().style.opacity = 1;
+          } else {
+            layer.getElement().style.opacity = (z - 10) / (13 - 10); // 10->0, 13->1
+          }
+        }
+      });
+      setZoom(z);
+    });
   }, [coords, CHXD_ID, mapLoaded]);
 
   // 4. Polyline toggle
