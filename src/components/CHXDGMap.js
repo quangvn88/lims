@@ -16,6 +16,7 @@ const CHXDGMap = () => {
   const mapRef = useRef(null);
   const markerGroupRef = useRef(null);
   const lineGroupRef = useRef(null);
+
   const [coords, setCoords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -135,7 +136,6 @@ const CHXDGMap = () => {
                 lat: parseFloat(i.ZLAT),
                 lng: parseFloat(i.ZLONG),
                 address: i.ADDRESS || "Đang cập nhật",
-                logo: i.LOGO || "PLX",
                 chxd_type: i.CHXD_TYPE || i.CHXD_TY || i.CHXD_CLASS || "",
                 image: base64Img || urlImg, // ưu tiên base64 từ SAP
               };
@@ -179,7 +179,6 @@ const CHXDGMap = () => {
                 lat: parseFloat(detailItem.ZLAT),
                 lng: parseFloat(detailItem.ZLONG),
                 address: detailItem.ADDRESS || "Đang cập nhật",
-                logo: detailItem.LOGO || "PLX",
                 chxd_type: detailItem.CHXD_TYPE || detailItem.CHXD_TY || detailItem.CHXD_CLASS || "",
                 image: base64Img || urlImg, // ưu tiên base64 từ SAP
               };
@@ -435,16 +434,22 @@ const CHXDGMap = () => {
       const isNearby = nearest10Ids.includes(c.id);
 
       let iconUrl = process.env.PUBLIC_URL + "/logo_default.png";
-      switch (c.logo) {
+      switch (c.chxd_type) {
         case "PLX":
           iconUrl = process.env.PUBLIC_URL + "/logo_plx.png";
           break;
+        case "NEW":
+          iconUrl = process.env.PUBLIC_URL + "/logo_plx.png";
+          break;
+        case "PVI":
+          iconUrl = process.env.PUBLIC_URL + "/logo_pvoil.png";
+          break;
         case "TNNQ":
-          iconUrl = process.env.PUBLIC_URL + "/logo_tnnq.jpg";
+          iconUrl = process.env.PUBLIC_URL + "/logo_tnnq.png";
           break;
-        case "DT":
-          iconUrl = process.env.PUBLIC_URL + "/logo_doithu.jpg";
-          break;
+        case "OTH":
+          iconUrl = process.env.PUBLIC_URL + "/logo_doithu1.png";
+          break;        
         default:
           iconUrl = process.env.PUBLIC_URL + "/logo_default.png";
           break;
