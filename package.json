@@ -21,6 +21,7 @@
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.3",
     "react-scripts": "5.0.1",
+    "react-select": "^5.10.2",
     "socket.io-client": "^4.8.1",
     "web-vitals": "^2.1.4"
   },
@@ -48,5 +49,15 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": false,
+    "printWidth": 80,
+    "tabWidth": 2,
+    "useTabs": false,
+    "arrowParens": "always",
+    "endOfLine": "lf"
   }
 }

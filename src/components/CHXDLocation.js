@@ -85,13 +85,15 @@ const CHXDLocation = () => {
               id: tData[0].CHXD_ID,
               title: tData[0].CHXD_T,
               address: tData[0].ADDRESS,
-              chxd_type: tData[0].CHXD_TYPE
+              chxd_type: tData[0].CHXD_TYPE,
+              logo: tData[0].LOGO
             }
           : {
               id: CHXD_ID,
               title: "Không tồn tại",
               address: "Không có địa chỉ",
-              chxd_type: ""
+              chxd_type: "",
+              logo: ""
             };
 
       setChxdData(info);
@@ -142,11 +144,24 @@ const CHXDLocation = () => {
 
     console.log(chxdData.CHXD_TYPE);
 
-    const { lat, lng } = currentPos;
-    const logoSrc =
-      chxdData.chxd_type === "PLX"
-        ? `${process.env.PUBLIC_URL}/logo_plx.png`
-        : `${process.env.PUBLIC_URL}/logo_pvoil.png`;
+    const { lat, lng } = currentPos;    
+
+    let logoSrc = process.env.PUBLIC_URL + "/logo_default.png";
+    switch (chxdData.logo) {
+      case "PLX":
+        logoSrc = process.env.PUBLIC_URL + "/logo_plx.png";
+        break;
+      case "TNNQ":
+        logoSrc = process.env.PUBLIC_URL + "/logo_tnnq.jpg";
+        break;
+      case "DT":
+        logoSrc = process.env.PUBLIC_URL + "/logo_doithu.jpg";
+        break;
+      default:
+        logoSrc = process.env.PUBLIC_URL + "/logo_default.png";
+        break;
+    }    
+    console.log(logoSrc);
 
     const labelHTML = `
       <div class="pulse-label" style="display:flex; flex-direction:column; max-width:230px;white-space: normal; word-break: break-word; overflow-wrap: break-word;">
