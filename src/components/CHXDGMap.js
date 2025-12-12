@@ -37,7 +37,8 @@ const CHXDGMap = () => {
   const [zoom, setZoom] = useState(6);
   const zoomUpdateTimeoutRef = useRef(null);
   const lastZoomLevelRef = useRef(6); // Track zoom level để chỉ update khi thay đổi đáng kể
-  const [nearest10Stations, setNearest10Stations] = useState([]); 
+  const [nearest10Stations, setNearest10Stations] = useState([]);
+  const [imageReady, setImageReady] = useState(false); 
 
   const handleSelectStation = (id) => {
     if (!id) return;
@@ -75,8 +76,8 @@ const CHXDGMap = () => {
 
   const computeLabelOpacity = (z) => {
     if (z < 10) return 0;
-    if (z >= 13) return 1;
-    return (z - 10) / (13 - 10); // linear 10->0 .. 13->1
+    if (z >= 15) return 1;
+    return (z - 15) / (15 - 10); // linear 10->0 .. 13->1
   };
 
   const handleMapTypeChange = (type) => {
@@ -421,10 +422,14 @@ const CHXDGMap = () => {
       priceChangeMap[station.id] = station.price_change;
     });
 
-    const hideMarkerTooltip = !!chxdIdParam;
+    const hideMarkerTooltip = false;//!!chxdIdParam;
 
     // Lấy zoom hiện tại từ map để đảm bảo chính xác
     const currentZoom = map.getZoom() || zoom;
+
+    // Lưu target marker để thêm vào sau cùng
+    let targetMarker = null;
+    let targetTextMarker = null;
 
     coordsToDisplay.forEach(c => {
       const size = getMarkerSize(currentZoom);
@@ -456,10 +461,13 @@ const CHXDGMap = () => {
       }
 
       const markerIcon = L.icon({ iconUrl, iconSize: [size, size], iconAnchor:[size / 2, size], popupAnchor:[0,-25] });
-      const marker = L.marker([c.lat,c.lng], { icon: markerIcon });
+      const marker = L.marker([c.lat,c.lng], { 
+        icon: markerIcon,
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target marker luôn ở trên khi có chxdIdParam
+      });
       if (!hideMarkerTooltip) {
         marker.bindPopup(`
-          <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i><br/>☎️ ${c.phone || "N/A"}
+          <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i>}
         `);
         marker.on("mouseover", ()=>marker.openPopup());
         marker.on("mouseout", ()=>marker.closePopup());
@@ -486,8 +494,20 @@ const CHXDGMap = () => {
       // Kết hợp vào div chứa giá
       const priceDivHTML = `<div class="price-container">${priceHTML} ${priceChangeHTML}</div>`;
 
+      // Tính toán font-size tự động dựa trên độ dài title
+      // Giả sử mỗi ký tự chiếm khoảng 0.6em, max width khoảng 200px
+      const maxTitleLength = 20; // Số ký tự tối đa để hiển thị với font-size gốc
+      const titleLength = c.title.length;
+      let titleFontSize = fs;
+      
+      // Nếu title dài hơn maxTitleLength, giảm font-size
+      if (titleLength > maxTitleLength) {
+        const scaleFactor = maxTitleLength / titleLength;
+        titleFontSize = Math.max(fs * scaleFactor, fs * 0.7); // Tối thiểu 70% font-size gốc
+      }
+
       // Luôn tạo label (nhưng opacity do JS điều khiển)
-      const labelTitleHTML = `<div>${c.title.length > 16 ? c.title.slice(0,16) + "…" : c.title}</div>`;
+      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">${c.title}</div>`;
 
       const labelHTML = `
         <div style="
@@ -501,6 +521,7 @@ const CHXDGMap = () => {
           white-space: nowrap;
           margin-left: 6px;
           text-align: left;
+          max-width: 250px;
           ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
           transition: opacity 0.3s;
         ">
@@ -511,7 +532,12 @@ const CHXDGMap = () => {
 
       const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });
       // interactive true so element is created; but prevent bubbling to map interactions
-      const textMarker = L.marker([c.lat,c.lng], { icon: labelIcon, interactive: true, bubblingMouseEvents: false });
+      const textMarker = L.marker([c.lat,c.lng], { 
+        icon: labelIcon, 
+        interactive: true, 
+        bubblingMouseEvents: false,
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target label luôn ở trên
+      });
 
       // When added to map, immediately set opacity based on current zoom
       textMarker.on("add", () => {
@@ -523,9 +549,22 @@ const CHXDGMap = () => {
       const existingEl = textMarker.getElement();
       if (existingEl) existingEl.style.opacity = computeLabelOpacity(zoom);
 
-      markerGroup.addLayer(textMarker);
-      markerGroup.addLayer(marker);
+      // Nếu là target marker, lưu lại để thêm vào sau cùng
+      if (isTarget && chxdIdParam) {
+        targetMarker = marker;
+        targetTextMarker = textMarker;
+      } else {
+        // Thêm các marker khác vào ngay
+        markerGroup.addLayer(textMarker);
+        markerGroup.addLayer(marker);
+      }
     });
+
+    // Thêm target marker vào sau cùng để nó luôn ở trên cùng
+    if (targetMarker && targetTextMarker) {
+      markerGroup.addLayer(targetTextMarker);
+      markerGroup.addLayer(targetMarker);
+    }
 
     if (!initialViewSet.current) {
       const target = coordsToDisplay.find(x => x.id === targetId);
@@ -578,6 +617,19 @@ const CHXDGMap = () => {
 
   const targetStation = visibleCoords.find(c => c.id === targetId);
   const shouldShowListPanel = !!bukrsParam;
+
+  // Preload ảnh khi có targetStation
+  useEffect(() => {
+    if (targetStation?.image) {
+      setImageReady(false);
+      const img = new Image();
+      img.onload = () => setImageReady(true);
+      img.onerror = () => setImageReady(false);
+      img.src = targetStation.image;
+    } else {
+      setImageReady(false);
+    }
+  }, [targetStation?.image, targetStation?.id]);
 
   return (
     <div style={{ height: "100vh", position: "relative" }}>
@@ -640,27 +692,54 @@ const CHXDGMap = () => {
           <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10 }}>
             Hệ thống CHXD trên địa bàn
           </div>
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>
             {targetStation.title}
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 6 }}>
+            {targetStation.id}
           </div>
           <div style={{ color: "#555", marginBottom: 10 }}>
             📍 {targetStation.address || "Đang cập nhật"}
           </div>
           {targetStation.image && (
-            <img
-              src={targetStation.image}
-              alt={targetStation.title}
-              style={{
-                width: "100%",
-                maxHeight: 220,
-                objectFit: "cover",
-                borderRadius: 10,
-                border: "1px solid #eee",
-              }}
-              onError={(e) => {
-                e.target.style.display = "none";
-              }}
-            />
+            <div style={{ position: "relative", width: "100%", minHeight: 220 }}>
+              {!imageReady && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#f0f0f0",
+                    borderRadius: 10,
+                  }}
+                >
+                  <div style={{ fontSize: 14, color: "#666" }}>⏳ Đang tải ảnh...</div>
+                </div>
+              )}
+              <img
+                src={targetStation.image}
+                alt={targetStation.title}
+                style={{
+                  width: "100%",
+                  maxHeight: 220,
+                  objectFit: "cover",
+                  borderRadius: 10,
+                  border: "1px solid #eee",
+                  opacity: imageReady ? 1 : 0,
+                  transition: "opacity 0.3s ease-in",
+                }}
+                onLoad={() => setImageReady(true)}
+                onError={(e) => {
+                  e.target.style.display = "none";
+                  setImageReady(false);
+                }}
+              />
+            </div>
           )}
         </div>
       )}
