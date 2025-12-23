@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { BASE_URL, API, API_USER, API_PASSWORD } from "../config";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import FuelSelect from "../components/FuelSelect";
 import MapTypeSelect from "./MapTypeSelect";
 
 const CHXDGMap = () => {
@@ -11,6 +10,7 @@ const CHXDGMap = () => {
   const searchParams = new URLSearchParams(location.search);
   const bukrsParam = searchParams.get("I_BUKRS") || searchParams.get("i_bukrs") || "";
   const chxdIdParam = searchParams.get("i_chxdid") || searchParams.get("I_CHXDID") || "";
+  const matnrParam = searchParams.get("i_matnr") || searchParams.get("I_MATNR") || "";
   const targetId = chxdIdParam;
 
   const mapRef = useRef(null);
@@ -21,9 +21,9 @@ const CHXDGMap = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showLines, setShowLines] = useState(false);
+  const [showText, setShowText] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapType, setMapType] = useState("satellite");
-  const [fuelType, setFuelType] = useState("xang92");
   const [showControls, setShowControls] = useState(true);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showListPanel, setShowListPanel] = useState(true);
@@ -35,10 +35,13 @@ const CHXDGMap = () => {
     TNNQ: true,
   });
   const [zoom, setZoom] = useState(6);
-  const zoomUpdateTimeoutRef = useRef(null);
-  const lastZoomLevelRef = useRef(6); // Track zoom level để chỉ update khi thay đổi đáng kể
-  const [nearest10Stations, setNearest10Stations] = useState([]);
   const [imageReady, setImageReady] = useState(false); 
+
+  const getFuelIcon = (matkl) => {
+    const fuel = (matkl || "").toUpperCase();
+    if (fuel.includes("0201")) return "/icons/xang92.svg";
+    return "/icons/do.svg";
+  };
 
   const handleSelectStation = (id) => {
     if (!id) return;
@@ -106,9 +109,40 @@ const CHXDGMap = () => {
     }).addTo(mapRef.current);
   };
 
+  // Thêm hàm helper để tính màu dựa trên mức thay đổi (sau các hàm getMarkerSize, getFontSize, etc.)
+  const getPriceChangeColor = (priceChange) => {
+    const absChange = Math.abs(priceChange);
+    
+    if (priceChange > 0) {
+      // Mức tăng - màu đỏ
+      if (absChange < 200) {
+        return { color: "#ff6b6b", bg: "rgba(255, 107, 107, 0.1)" }; // Đỏ nhạt
+      } else if (absChange < 500) {
+        return { color: "#ff3b30", bg: "rgba(255, 59, 48, 0.25)" }; // Đỏ trung bình
+      } else {
+        return { color: "#d70015", bg: "rgba(215, 0, 21, 0.40)" }; // Đỏ đậm
+      }
+    } else {
+      // Mức giảm - màu xanh
+      if (absChange < 200) {
+        return { color: "#34c759", bg: "rgba(52, 199, 89, 0.1)" }; // Xanh nhạt
+      } else if (absChange < 500) {
+        return { color: "#30d158", bg: "rgba(48, 209, 88, 0.25)" }; // Xanh trung bình
+      } else {
+        return { color: "#248a3d", bg: "rgba(36, 138, 61, 0.40)" }; // Xanh đậm
+      }
+    }
+  };
+
   // 1. Fetch dữ liệu
   const fetchCHXDList = async () => {
-    console.log("fetchCHXDList: " + bukrsParam + chxdIdParam);
+    // Chỉ fetch khi có bukrsParam
+    if (!bukrsParam) {
+      setCoords([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const token = btoa(`${API_USER}:${API_PASSWORD}`);
@@ -117,14 +151,14 @@ const CHXDGMap = () => {
         headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
         body: JSON.stringify({
           FUNC: "ZFM_CHXD_GMAP",
-          DATA: { I_BUKRS: bukrsParam },
+          DATA: { I_BUKRS: bukrsParam, I_MATNR: matnrParam },
         }),
       });
 
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
       const data = await res.json();
-      console.log(data);
+      
       const list =
         Array.isArray(data?.RESPONSE?.T_DATA) && data.RESPONSE.T_DATA.length > 0
           ? data.RESPONSE.T_DATA.map(i => {
@@ -138,20 +172,26 @@ const CHXDGMap = () => {
                 lng: parseFloat(i.ZLONG),
                 address: i.ADDRESS || "Đang cập nhật",
                 chxd_type: i.CHXD_TYPE || i.CHXD_TY || i.CHXD_CLASS || "",
-                image: base64Img || urlImg, // ưu tiên base64 từ SAP
+                image: base64Img || urlImg, 
+                matnr: i.MATNR,
+                matnr_t: i.MATNR_T,
+                matkl: i.MATKL,
+                price: i.PRICE,
+                price_change: i.PRICE_CHANGE
               };
-            }).filter(x => !isNaN(x.lat) && !isNaN(x.lng))
+            }).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng))
           : [
-              { id: "1000000068", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500, chxd_type: "TRUCTHUOC" },
-              { id: "HN1", title: "Hà Nội 1", lat: 21.0385, lng: 105.7542, price: 23500, chxd_type: "TRUCTHUOC" },
-              { id: "HN2", title: "Hà Nội 2", lat: 21.0485, lng: 105.9542, price: 22500, chxd_type: "NHUONGQUYEN" },
-              { id: "HN3", title: "Hà Nội 3", lat: 21.0445, lng: 105.9242, price: 23000, chxd_type: "NHUONGQUYEN" },
-              { id: "HN4", title: "Hà Nội 4", lat: 21.0300, lng: 105.7342, price: 24500, chxd_type: "NGOAIHE" },
-              { id: "HN5", title: "Hà Nội 5", lat: 21.0665, lng: 105.9442, price: 23500, chxd_type: "NGOAIHE" },
-              { id: "DN", title: "CHXD Petrolimex Đà Nẵng", lat: 16.0678, lng: 108.2208, price: 23400, chxd_type: "TRUCTHUOC" },
-              { id: "HCM", title: "CHXD Petrolimex TP.HCM", lat: 10.7769, lng: 106.7009, price: 23600, chxd_type: "TRUCTHUOC" },
+              { id: "1000000068", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500, price_change: -150, chxd_type: "TRUCTHUOC" },
+              { id: "HN1", title: "Hà Nội 1", lat: 21.0385, lng: 105.7542, price: 23500, price_change: 100, chxd_type: "TRUCTHUOC" },
+              { id: "HN2", title: "Hà Nội 2", lat: 21.0485, lng: 105.9542, price: 22500, price_change: 200,chxd_type: "NHUONGQUYEN" },
+              { id: "HN3", title: "Hà Nội 3", lat: 21.0445, lng: 105.9242, price: 23000, price_change: 300,chxd_type: "NHUONGQUYEN" },
+              { id: "HN4", title: "Hà Nội 4", lat: 21.0300, lng: 105.7342, price: 24500, price_change: 400,chxd_type: "NGOAIHE" },
+              { id: "HN5", title: "Hà Nội 5", lat: 21.0665, lng: 105.9442, price: 23500, price_change: 500,chxd_type: "NGOAIHE" },
+              { id: "DN", title: "CHXD Petrolimex Đà Nẵng", lat: 16.0678, lng: 108.2208, price: 23400, price_change: -100, chxd_type: "TRUCTHUOC" },
+              { id: "HCM", title: "CHXD Petrolimex TP.HCM", lat: 10.7769, lng: 106.7009, price: 23600, price_change: -200, chxd_type: "TRUCTHUOC" },
             ];
 
+      console.log("list", list);
       // Nếu có chxdIdParam, lấy thêm dữ liệu chi tiết cho CHXD đó
       if (chxdIdParam) {
         try {
@@ -160,7 +200,7 @@ const CHXDGMap = () => {
             headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
             body: JSON.stringify({
               FUNC: "ZFM_CHXD_GMAP",
-              DATA: { I_BUKRS: bukrsParam, I_CHXD_ID: chxdIdParam },
+              DATA: { I_BUKRS: bukrsParam, I_CHXD_ID: chxdIdParam, I_MATNR: matnrParam },
             }),
           });
 
@@ -181,7 +221,12 @@ const CHXDGMap = () => {
                 lng: parseFloat(detailItem.ZLONG),
                 address: detailItem.ADDRESS || "Đang cập nhật",
                 chxd_type: detailItem.CHXD_TYPE || detailItem.CHXD_TY || detailItem.CHXD_CLASS || "",
-                image: base64Img || urlImg, // ưu tiên base64 từ SAP
+                image: base64Img || urlImg,
+                matnr: detailItem.MATNR,
+                matnr_t: detailItem.MATNR_T,
+                matkl: detailItem.MATKL,
+                price: detailItem.PRICE,
+                price_change: detailItem.PRICE_CHANGE
               };
 
               // Kiểm tra xem CHXD đã có trong list chưa
@@ -199,7 +244,6 @@ const CHXDGMap = () => {
           }
         } catch (detailErr) {
           console.error("Error fetching CHXD detail:", detailErr);
-          // Không throw error, chỉ log để không ảnh hưởng đến danh sách chính
         }
       }
 
@@ -264,22 +308,30 @@ const CHXDGMap = () => {
           layer.setIcon(newDivIcon);
 
           // After replacing icon, set proper opacity (if element exists)
+          // Nếu showText = true, luôn hiển thị đầy đủ (opacity = 1)
+          // Nếu showText = false, điều chỉnh opacity theo zoom
           const el = layer.getElement();
           if (el) {
-            el.style.opacity = computeLabelOpacity(currentZoom);
+            el.style.opacity = showText ? 1 : computeLabelOpacity(currentZoom);
           } else {
             // If element not yet available, attach once 'add' to apply opacity when rendered
             layer.once("add", () => {
               const el2 = layer.getElement();
-              if (el2) el2.style.opacity = computeLabelOpacity(currentZoom);
+              if (el2) el2.style.opacity = showText ? 1 : computeLabelOpacity(currentZoom);
             });
           }
         }
       });
-
-      lastZoomLevelRef.current = currentZoom;
     });
-  }, [zoom]);
+  }, [zoom, showText]); // Thêm showText vào dependency array
+
+  // Thêm ref để lưu giá trị showText (sau các state declarations)
+  const showTextRef = useRef(showText);
+
+  // Cập nhật ref khi showText thay đổi
+  useEffect(() => {
+    showTextRef.current = showText;
+  }, [showText]);
 
   // 1. Khởi tạo map
   useEffect(() => {
@@ -312,8 +364,7 @@ const CHXDGMap = () => {
       mapRef.current.on("zoomend", () => {
         const z = mapRef.current.getZoom();
         setZoom(z);
-        lastZoomLevelRef.current = z;
-        // Update label opacity ngay lập tức (không cần debounce cho opacity)
+        
         requestAnimationFrame(() => {
           const mg = markerGroupRef.current;
           if (mg) {
@@ -321,13 +372,15 @@ const CHXDGMap = () => {
               if (layer.options?.icon?.options?.className === "plx-label") {
                 const el = layer.getElement();
                 if (el) {
-                  el.style.opacity = computeLabelOpacity(z);
+                  // Sử dụng showTextRef.current thay vì showText để tránh stale closure
+                  el.style.opacity = showTextRef.current ? 1 : computeLabelOpacity(z);
                 }
               }
             });
           }
         });
       });
+      
       setMapLoaded(true);
     }
   }, []);
@@ -401,19 +454,13 @@ const CHXDGMap = () => {
         .slice(0,10)
         .map(c => ({
           ...c,
-          distance: getDistance(c, target),
-          price_change: c.price !== undefined && target.price !== undefined 
-            ? c.price - target.price 
-            : 0
+          distance: getDistance(c, target)
         }));
 
       nearest10Ids = nearest10.map(c => c.id);
-      setNearest10Stations(nearest10);
 
       // Chỉ hiển thị target + 10 điểm gần nhất
       coordsToDisplay = [target, ...nearest10];
-    } else {
-      setNearest10Stations([]);
     }
 
     // Tạo map id -> price_change
@@ -473,65 +520,71 @@ const CHXDGMap = () => {
         marker.on("mouseout", ()=>marker.closePopup());
       }
 
-      // Giá chính
-      const priceHTML = c.price
-        ? `<span class="price-value" style="color:#008800;font-weight:bold;">⛽ ${c.price.toLocaleString()} đ/L</span>`
-        : "";
+      // Giá chính - Màu xanh dương Apple
+      const priceHTML = c.price && c.price > 0
+        ? `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`
+        : `<span class="price-value" style="color:#86868b;font-size:11px;font-style:italic;font-weight:400;">Chưa có giá</span>`;
 
-      // Giá thay đổi (tăng/giảm)
-      const priceChange = priceChangeMap[c.id] || 0;
-      const priceChangeHTML = priceChange !== 0
+      // Giá thay đổi (tăng/giảm) - Phân vùng màu theo mức độ
+      const priceChange = (c.price && c.price > 0) ? (c.price_change || 0) : 0;
+      const priceChangeColors = priceChange !== 0 ? getPriceChangeColor(priceChange) : null;
+      const priceChangeHTML = (c.price && c.price > 0 && priceChange !== 0 && priceChangeColors)
         ? `<span style="
-              margin-left: 4px;
-              font-weight: bold;
-              color: ${priceChange > 0 ? "#d33" : "#008000"};
+              margin-left: 6px;
+              font-weight: 500;
+              font-size: 12px;
+              color: ${priceChangeColors.color};
+              background: ${priceChangeColors.bg};
+              padding: 2px 6px;
+              border-radius: 4px;
+              display: inline-flex;
+              align-items: center;
+              gap: 2px;
             ">
-              <i class="bi ${priceChange > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}"></i>
+              <i class="bi ${priceChange > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}" style="font-size: 10px;"></i>
               ${Math.abs(priceChange).toLocaleString()}đ
           </span>`
         : "";
 
       // Kết hợp vào div chứa giá
-      const priceDivHTML = `<div class="price-container">${priceHTML} ${priceChangeHTML}</div>`;
+      const priceDivHTML = `<div class="price-container" style="margin-top: 2px;">${priceHTML}${priceChangeHTML}</div>`;
 
       // Tính toán font-size tự động dựa trên độ dài title
-      // Giả sử mỗi ký tự chiếm khoảng 0.6em, max width khoảng 200px
-      const maxTitleLength = 20; // Số ký tự tối đa để hiển thị với font-size gốc
+      const maxTitleLength = 20;
       const titleLength = c.title.length;
       let titleFontSize = fs;
       
-      // Nếu title dài hơn maxTitleLength, giảm font-size
       if (titleLength > maxTitleLength) {
         const scaleFactor = maxTitleLength / titleLength;
-        titleFontSize = Math.max(fs * scaleFactor, fs * 0.7); // Tối thiểu 70% font-size gốc
+        titleFontSize = Math.max(fs * scaleFactor, fs * 0.7);
       }
 
-      // Luôn tạo label (nhưng opacity do JS điều khiển)
-      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">${c.title}</div>`;
+      // Luôn tạo label - Cập nhật màu title theo phong cách Apple
+      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${isTarget ? "600" : "500"}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${c.title}</div>`;
 
       const labelHTML = `
         <div style="
-          background: rgba(255,255,255,0.95);
-          border: 2px solid ${isTarget ? "#d33" : isNearby ? "#ff8800" : "#2a5599"};
-          border-radius: 6px;
-          padding: 2px 6px;
+          background: rgba(255,255,255,0.98);
+          border: 1.5px solid ${isTarget ? "#ff3b30" : isNearby ? "#ff9500" : "#d2d2d7"};
+          border-radius: 8px;
+          padding: 4px 8px;
           font-size: ${fs}px;
-          font-weight: ${isTarget ? "bold" : "normal"};
+          font-weight: ${isTarget ? "600" : "400"};
           display: inline-block;
           white-space: nowrap;
           margin-left: 6px;
           text-align: left;
           max-width: 250px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
-          transition: opacity 0.3s;
+          transition: opacity 0.3s, box-shadow 0.2s;
         ">
           ${labelTitleHTML}
           ${priceDivHTML}
         </div>
       `;
 
-      const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });
-      // interactive true so element is created; but prevent bubbling to map interactions
+      const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });      
       const textMarker = L.marker([c.lat,c.lng], { 
         icon: labelIcon, 
         interactive: true, 
@@ -539,15 +592,19 @@ const CHXDGMap = () => {
         zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target label luôn ở trên
       });
 
-      // When added to map, immediately set opacity based on current zoom
+      // When added to map, immediately set opacity based on showText and zoom
       textMarker.on("add", () => {
         const el = textMarker.getElement();
-        if (el) el.style.opacity = computeLabelOpacity(zoom);
+        if (el) {
+          el.style.opacity = showTextRef.current ? 1 : computeLabelOpacity(zoom);
+        }
       });
 
       // Also set if element already exists (rare)
       const existingEl = textMarker.getElement();
-      if (existingEl) existingEl.style.opacity = computeLabelOpacity(zoom);
+      if (existingEl) {
+        existingEl.style.opacity = showTextRef.current ? 1 : computeLabelOpacity(zoom);
+      }
 
       // Nếu là target marker, lưu lại để thêm vào sau cùng
       if (isTarget && chxdIdParam) {
@@ -555,15 +612,21 @@ const CHXDGMap = () => {
         targetTextMarker = textMarker;
       } else {
         // Thêm các marker khác vào ngay
-        markerGroup.addLayer(textMarker);
         markerGroup.addLayer(marker);
+        // Chỉ thêm textMarker nếu showText = true
+        if (showText) {
+          markerGroup.addLayer(textMarker);
+        }
       }
     });
 
     // Thêm target marker vào sau cùng để nó luôn ở trên cùng
     if (targetMarker && targetTextMarker) {
-      markerGroup.addLayer(targetTextMarker);
       markerGroup.addLayer(targetMarker);
+      // Chỉ thêm targetTextMarker nếu showText = true
+      if (showText) {
+        markerGroup.addLayer(targetTextMarker);
+      }
     }
 
     if (!initialViewSet.current) {
@@ -580,7 +643,7 @@ const CHXDGMap = () => {
 
       initialViewSet.current = true; // đánh dấu đã set view
     }
-  }, [visibleCoords, targetId, mapLoaded]);
+  }, [visibleCoords, targetId, mapLoaded, showText]); 
 
   // 4. Polyline toggle
   useEffect(() => {
@@ -689,17 +752,86 @@ const CHXDGMap = () => {
             </button>
           </div>
 
-          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: "#1d1d1f" }}>
             Hệ thống CHXD trên địa bàn
           </div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#1d1d1f", marginBottom: 4 }}>
             {targetStation.title}
           </div>
-          <div style={{ fontSize: 12, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, marginBottom: 6, color: "#86868b", fontWeight: 400 }}>
             {targetStation.id}
           </div>
-          <div style={{ color: "#555", marginBottom: 10 }}>
+          <div style={{ color: "#86868b", marginBottom: 10, fontSize: 14 }}>
             📍 {targetStation.address || "Đang cập nhật"}
+          </div>
+          <div style={{ 
+            background: "#f5f5f7", 
+            padding: "12px 14px", 
+            borderRadius: "12px", 
+            marginBottom: 12,
+            border: "1px solid #d2d2d7",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px"
+          }}>
+            <div style={{ 
+              width: "40px", 
+              height: "40px", 
+              borderRadius: "50%", 
+              background: "#ffffff", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              padding: "8px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
+            }}>
+              <img 
+                src={process.env.PUBLIC_URL + getFuelIcon(targetStation.matkl)} 
+                alt="fuel-icon" 
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                onError={(e) => {
+                  e.target.src = process.env.PUBLIC_URL + "/icons/xang92.svg";
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "13px", color: "#86868b", textTransform: "uppercase", fontWeight: "600", letterSpacing: "0.3px", marginBottom: "4px" }}>
+                {targetStation.matnr_t}
+              </div>
+              <div style={{ fontSize: "20px", fontWeight: "600", color: "#1d1d1f", display: "flex", alignItems: "center", lineHeight: "1.2" }}>
+                {targetStation.price ? (
+                  <>
+                    <span style={{ color: "#007aff", fontWeight: "600" }}>
+                      {targetStation.price.toLocaleString()} đ/L
+                    </span>
+                    {targetStation.price > 0 && targetStation.price_change !== undefined && targetStation.price_change !== 0 && (() => {
+                      const changeColors = getPriceChangeColor(targetStation.price_change);
+                      return (
+                        <span style={{ 
+                          marginLeft: "10px", 
+                          fontSize: "13px", 
+                          fontWeight: "500",
+                          color: changeColors.color,
+                          background: changeColors.bg,
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px"
+                        }}>
+                          <i className={`bi ${targetStation.price_change > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}`} style={{ fontSize: "10px" }}></i>
+                          {Math.abs(targetStation.price_change).toLocaleString()}đ
+                        </span>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <span style={{ color: "#86868b", fontStyle: "italic", fontWeight: "400" }}>
+                    Chưa có giá
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
           {targetStation.image && (
             <div style={{ position: "relative", width: "100%", minHeight: 220 }}>
@@ -896,7 +1028,7 @@ const CHXDGMap = () => {
       {/* --- Bộ điều khiển (controls) góc phải --- */}
       {showControls && (
         <div
-          className="d-flex flex-column align-items-end gap-2 position-absolute"
+          className="d-flex flex-column gap-2 position-absolute"
           style={{
             top: 10,
             right: 10,
@@ -905,13 +1037,14 @@ const CHXDGMap = () => {
             borderRadius: 10,
             padding: "10px 12px",
             boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+            alignItems: "flex-start", // Căn trái thay vì align-items-end
           }}
         >
           {/* Nút thu nhỏ */}
           <button
             onClick={() => setShowControls(false)}
             style={{
-              alignSelf: "flex-end",
+              alignSelf: "flex-end", // Nút X vẫn ở bên phải
               border: "none",
               background: "transparent",
               cursor: "pointer",
@@ -923,35 +1056,45 @@ const CHXDGMap = () => {
           </button>
 
           {/* Công tắc đường nối */}
-          <div className="form-check form-switch m-0">
+          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
             <input
               className="form-check-input"
               type="checkbox"
               id="toggleLines"
               checked={showLines}
               onChange={() => setShowLines(!showLines)}
-              style={{ cursor: "pointer" }}
+              style={{ cursor: "pointer", marginRight: "8px" }}
             />
             <label
-              className="form-check-label ms-2"
+              className="form-check-label"
               htmlFor="toggleLines"
-              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer" }}
+              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
             >
               Hiện đường nối
+            </label>
+          </div>
+
+          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="toggleText"
+              checked={showText}
+              onChange={() => setShowText(!showText)}
+              style={{ cursor: "pointer", marginRight: "8px" }}
+            />
+            <label
+              className="form-check-label"
+              htmlFor="toggleText"
+              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+            >
+              Hiện text
             </label>
           </div>
 
           {/* Dropdown chọn loại bản đồ */}
           <div style={{ width: 160 }}>            
             <MapTypeSelect value={mapType} onChange={handleMapTypeChange} />
-          </div>
-
-          {/* Dropdown chọn loại xăng/dầu */}
-          <div style={{ width: 160, marginTop: 8 }}>           
-            <FuelSelect 
-              value={fuelType} 
-              onChange={(val) => setFuelType(val)}
-            />
           </div>
         </div>
       )}
