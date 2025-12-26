@@ -22,6 +22,7 @@ const CHXDGMap = () => {
   const [error, setError] = useState("");
   const [showLines, setShowLines] = useState(false);
   const [showText, setShowText] = useState(true);
+  const [showPrice, setShowPrice] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapType, setMapType] = useState("satellite");
   const [showControls, setShowControls] = useState(true);
@@ -36,6 +37,9 @@ const CHXDGMap = () => {
   });
   const [zoom, setZoom] = useState(6);
   const [imageReady, setImageReady] = useState(false); 
+
+  // Thêm state để track expanded categories (sau các state declarations)
+  const [expandedCategories, setExpandedCategories] = useState({});
 
   const getFuelIcon = (matkl) => {
     const fuel = (matkl || "").toUpperCase();
@@ -111,27 +115,17 @@ const CHXDGMap = () => {
 
   // Thêm hàm helper để tính màu dựa trên mức thay đổi (sau các hàm getMarkerSize, getFontSize, etc.)
   const getPriceChangeColor = (priceChange) => {
-    const absChange = Math.abs(priceChange);
     
-    if (priceChange > 0) {
       // Mức tăng - màu đỏ
-      if (absChange < 200) {
-        return { color: "#ff6b6b", bg: "rgba(255, 107, 107, 0.1)" }; // Đỏ nhạt
-      } else if (absChange < 500) {
-        return { color: "#ff3b30", bg: "rgba(255, 59, 48, 0.25)" }; // Đỏ trung bình
+      if (priceChange > 300) {
+        return { color: "#d70015", bg: "rgba(214, 20, 39, 0.31)" }; 
+      } else if (priceChange > 200) {
+        return { color: "#ff3b30", bg: "rgba(221, 158, 21, 0.53)" };
+      } else if (priceChange > 100) {
+        return { color: "#ff3b30", bg: "rgba(252, 255, 48, 0.55)" };
       } else {
-        return { color: "#d70015", bg: "rgba(215, 0, 21, 0.40)" }; // Đỏ đậm
-      }
-    } else {
-      // Mức giảm - màu xanh
-      if (absChange < 200) {
-        return { color: "#34c759", bg: "rgba(52, 199, 89, 0.1)" }; // Xanh nhạt
-      } else if (absChange < 500) {
-        return { color: "#30d158", bg: "rgba(48, 209, 88, 0.25)" }; // Xanh trung bình
-      } else {
-        return { color: "#248a3d", bg: "rgba(36, 138, 61, 0.40)" }; // Xanh đậm
-      }
-    }
+        return { color: "#28a745", bg: "rgba(28, 158, 58, 0.32)" };
+      }    
   };
 
   // 1. Fetch dữ liệu
@@ -159,39 +153,28 @@ const CHXDGMap = () => {
 
       const data = await res.json();
       
-      const list =
-        Array.isArray(data?.RESPONSE?.T_DATA) && data.RESPONSE.T_DATA.length > 0
-          ? data.RESPONSE.T_DATA.map(i => {
-              const mime = "image/jpeg";
-              const base64Img = i.BASE64 ? `data:${mime};base64,${i.BASE64}` : "";
-              const urlImg = i.IMAGE_URL || i.IMG_URL || i.ZIMG || i.IMG || "";
-              return {
-                id: i.CHXD_ID,
-                title: i.CHXD_T || "Cửa hàng không tên",
-                lat: parseFloat(i.ZLAT),
-                lng: parseFloat(i.ZLONG),
-                address: i.ADDRESS || "Đang cập nhật",
-                chxd_type: i.CHXD_TYPE || i.CHXD_TY || i.CHXD_CLASS || "",
-                image: base64Img || urlImg, 
-                matnr: i.MATNR,
-                matnr_t: i.MATNR_T,
-                matkl: i.MATKL,
-                price: i.PRICE,
-                price_change: i.PRICE_CHANGE
-              };
-            }).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng))
-          : [
-              { id: "1000000068", title: "CHXD Petrolimex Hà Nội", lat: 21.0285, lng: 105.8542, price: 23500, price_change: -150, chxd_type: "TRUCTHUOC" },
-              { id: "HN1", title: "Hà Nội 1", lat: 21.0385, lng: 105.7542, price: 23500, price_change: 100, chxd_type: "TRUCTHUOC" },
-              { id: "HN2", title: "Hà Nội 2", lat: 21.0485, lng: 105.9542, price: 22500, price_change: 200,chxd_type: "NHUONGQUYEN" },
-              { id: "HN3", title: "Hà Nội 3", lat: 21.0445, lng: 105.9242, price: 23000, price_change: 300,chxd_type: "NHUONGQUYEN" },
-              { id: "HN4", title: "Hà Nội 4", lat: 21.0300, lng: 105.7342, price: 24500, price_change: 400,chxd_type: "NGOAIHE" },
-              { id: "HN5", title: "Hà Nội 5", lat: 21.0665, lng: 105.9442, price: 23500, price_change: 500,chxd_type: "NGOAIHE" },
-              { id: "DN", title: "CHXD Petrolimex Đà Nẵng", lat: 16.0678, lng: 108.2208, price: 23400, price_change: -100, chxd_type: "TRUCTHUOC" },
-              { id: "HCM", title: "CHXD Petrolimex TP.HCM", lat: 10.7769, lng: 106.7009, price: 23600, price_change: -200, chxd_type: "TRUCTHUOC" },
-            ];
-
-      console.log("list", list);
+      const list =  data.RESPONSE.T_DATA.map(i => {
+        const mime = "image/jpeg";
+        const base64Img = i.BASE64 ? `data:${mime};base64,${i.BASE64}` : "";
+        const urlImg = i.IMAGE_URL || i.IMG_URL || i.ZIMG || i.IMG || "";
+        return {
+          id: i.CHXD_ID,
+          title: i.CHXD_T || "Cửa hàng không tên",
+          lat: parseFloat(i.ZLAT),
+          lng: parseFloat(i.ZLONG),
+          address: i.ADDRESS || "Đang cập nhật",
+          chxd_type: i.CHXD_TYPE || i.CHXD_TY || i.CHXD_CLASS || "",
+          image: base64Img || urlImg, 
+          matnr: i.MATNR,
+          matnr_t: i.MATNR_T,
+          matkl: i.MATKL,
+          price: i.PRICE,
+          price_change: i.PRICE_CHANGE,
+          price_flg: i.PRICE_FLG,
+          kbetr_tt:i.KBETR_TT
+        };
+      }).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+          
       // Nếu có chxdIdParam, lấy thêm dữ liệu chi tiết cho CHXD đó
       if (chxdIdParam) {
         try {
@@ -226,7 +209,9 @@ const CHXDGMap = () => {
                 matnr_t: detailItem.MATNR_T,
                 matkl: detailItem.MATKL,
                 price: detailItem.PRICE,
-                price_change: detailItem.PRICE_CHANGE
+                price_change: detailItem.PRICE_CHANGE,
+                price_flg: detailItem.PRICE_FLG,
+                kbetr_tt:detailItem.KBETR_TT
               };
 
               // Kiểm tra xem CHXD đã có trong list chưa
@@ -307,7 +292,6 @@ const CHXDGMap = () => {
 
           layer.setIcon(newDivIcon);
 
-          // After replacing icon, set proper opacity (if element exists)
           // Nếu showText = true, luôn hiển thị đầy đủ (opacity = 1)
           // Nếu showText = false, điều chỉnh opacity theo zoom
           const el = layer.getElement();
@@ -433,42 +417,7 @@ const CHXDGMap = () => {
     markerGroup.clearLayers();
 
     const target = visibleCoords.find(x => x.id === targetId);
-    let nearest10 = [];
-    let nearest10Ids = [];    
-    let coordsToDisplay = visibleCoords;
-
-    if (target) {
-      const getDistance = (a,b) => {
-        const R = 6371;
-        const dLat = ((b.lat - a.lat) * Math.PI)/180;
-        const dLon = ((b.lng - a.lng) * Math.PI)/180;
-        const lat1 = a.lat * Math.PI/180;
-        const lat2 = b.lat * Math.PI/180;
-        const x = Math.sin(dLat/2)**2 + Math.sin(dLon/2)**2 * Math.cos(lat1) * Math.cos(lat2);
-        return 2*R*Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
-      };
-
-      nearest10 = visibleCoords
-        .filter(c => c.id !== target.id)
-        .sort((a,b) => getDistance(a,target) - getDistance(b,target))
-        .slice(0,10)
-        .map(c => ({
-          ...c,
-          distance: getDistance(c, target)
-        }));
-
-      nearest10Ids = nearest10.map(c => c.id);
-
-      // Chỉ hiển thị target + 10 điểm gần nhất
-      coordsToDisplay = [target, ...nearest10];
-    }
-
-    // Tạo map id -> price_change
-    const priceChangeMap = {};
-    nearest10.forEach(station => {
-      priceChangeMap[station.id] = station.price_change;
-    });
-
+    
     const hideMarkerTooltip = false;//!!chxdIdParam;
 
     // Lấy zoom hiện tại từ map để đảm bảo chính xác
@@ -478,12 +427,11 @@ const CHXDGMap = () => {
     let targetMarker = null;
     let targetTextMarker = null;
 
-    coordsToDisplay.forEach(c => {
+    visibleCoords.forEach(c => {
       const size = getMarkerSize(currentZoom);
       const fs = getFontSize(currentZoom);
 
       const isTarget = c.id === targetId;
-      const isNearby = nearest10Ids.includes(c.id);
 
       let iconUrl = process.env.PUBLIC_URL + "/logo_default.png";
       switch (c.chxd_type) {
@@ -512,6 +460,11 @@ const CHXDGMap = () => {
         icon: markerIcon,
         zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target marker luôn ở trên khi có chxdIdParam
       });
+
+      marker.on("click", () => {
+        handleSelectStation(c.id);
+      });
+
       if (!hideMarkerTooltip) {
         marker.bindPopup(`
           <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i>}
@@ -527,27 +480,26 @@ const CHXDGMap = () => {
 
       // Giá thay đổi (tăng/giảm) - Phân vùng màu theo mức độ
       const priceChange = (c.price && c.price > 0) ? (c.price_change || 0) : 0;
-      const priceChangeColors = priceChange !== 0 ? getPriceChangeColor(priceChange) : null;
-      const priceChangeHTML = (c.price && c.price > 0 && priceChange !== 0 && priceChangeColors)
+      const priceChangeColors = getPriceChangeColor(priceChange);
+      const priceChangeHTML = (c.price_flg && c.price_flg !== 0 && priceChange !== 0)
         ? `<span style="
-              margin-left: 6px;
-              font-weight: 500;
-              font-size: 12px;
-              color: ${priceChangeColors.color};
-              background: ${priceChangeColors.bg};
-              padding: 2px 6px;
-              border-radius: 4px;
-              display: inline-flex;
-              align-items: center;
-              gap: 2px;
-            ">
-              <i class="bi ${priceChange > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}" style="font-size: 10px;"></i>
-              ${Math.abs(priceChange).toLocaleString()}đ
-          </span>`
+            font-weight: 500;
+            font-size: 12px;
+            color: ${priceChangeColors.color};
+            background: ${priceChangeColors.bg};
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+          ">
+            <i style="font-size: 10px;"></i>
+            ${priceChange.toLocaleString()}
+        </span>`
         : "";
 
       // Kết hợp vào div chứa giá
-      const priceDivHTML = `<div class="price-container" style="margin-top: 2px;">${priceHTML}${priceChangeHTML}</div>`;
+      const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}${priceChangeHTML}</div>`;
 
       // Tính toán font-size tự động dựa trên độ dài title
       const maxTitleLength = 20;
@@ -562,27 +514,46 @@ const CHXDGMap = () => {
       // Luôn tạo label - Cập nhật màu title theo phong cách Apple
       const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${isTarget ? "600" : "500"}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${c.title}</div>`;
 
-      const labelHTML = `
-        <div style="
-          background: rgba(255,255,255,0.98);
-          border: 1.5px solid ${isTarget ? "#ff3b30" : isNearby ? "#ff9500" : "#d2d2d7"};
-          border-radius: 8px;
-          padding: 4px 8px;
-          font-size: ${fs}px;
-          font-weight: ${isTarget ? "600" : "400"};
-          display: inline-block;
-          white-space: nowrap;
-          margin-left: 6px;
-          text-align: left;
-          max-width: 250px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
-          transition: opacity 0.3s, box-shadow 0.2s;
-        ">
-          ${labelTitleHTML}
-          ${priceDivHTML}
-        </div>
-      `;
+      const labelHTML = showPrice
+        ? (priceChangeHTML 
+            ? `
+              <div style="
+                background: rgba(255,255,255,0.95);
+                border: none;
+                border-radius: 6px;
+                padding: 0;
+                display: inline-block;
+                white-space: nowrap;
+                margin-left: 6px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
+                transition: opacity 0.3s, box-shadow 0.2s;
+              ">
+                ${priceChangeHTML}
+              </div>
+            `
+            : "")
+        : `
+          <div style="
+            background: rgba(255,255,255,0.98);
+            border: 1.5px solid ${isTarget ? "#ff3b30" : "#d2d2d7"};
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: ${fs}px;
+            font-weight: ${isTarget ? "600" : "400"};
+            display: inline-block;
+            white-space: nowrap;
+            margin-left: 6px;
+            text-align: left;
+            max-width: 250px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
+            transition: opacity 0.3s, box-shadow 0.2s;
+          ">
+            ${labelTitleHTML}
+            ${priceDivHTML}
+          </div>
+        `;
 
       const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });      
       const textMarker = L.marker([c.lat,c.lng], { 
@@ -630,11 +601,11 @@ const CHXDGMap = () => {
     }
 
     if (!initialViewSet.current) {
-      const target = coordsToDisplay.find(x => x.id === targetId);
+      const target = visibleCoords.find(x => x.id === targetId);
       
       if (target) {
-        // Nếu có target, zoom trực tiếp vào target với level 16
-        map.setView([target.lat, target.lng], 16, { animate: true });
+        // Nếu có target, zoom trực tiếp vào target
+        map.setView([target.lat, target.lng], 15, { animate: true });
       } else {
         // Nếu không có target, fit bounds cho tất cả
         const bounds = L.latLngBounds(visibleCoords.map(c => [c.lat, c.lng]));
@@ -643,7 +614,7 @@ const CHXDGMap = () => {
 
       initialViewSet.current = true; // đánh dấu đã set view
     }
-  }, [visibleCoords, targetId, mapLoaded, showText]); 
+  }, [visibleCoords, targetId, mapLoaded, showText, showPrice]); 
 
   // 4. Polyline toggle
   useEffect(() => {
@@ -679,7 +650,6 @@ const CHXDGMap = () => {
   }, [showLines, visibleCoords, targetId]);
 
   const targetStation = visibleCoords.find(c => c.id === targetId);
-  const shouldShowListPanel = !!bukrsParam;
 
   // Preload ảnh khi có targetStation
   useEffect(() => {
@@ -703,7 +673,7 @@ const CHXDGMap = () => {
           style={{
             position: "absolute",
             top: 10,
-            left: 45,
+            right: 10, // Thay đổi từ left: 45
             zIndex: 1003,
             width: 30,
             height: 30,
@@ -727,7 +697,7 @@ const CHXDGMap = () => {
           style={{
             position: "absolute",
             top: 10,
-            left: 10,
+            right: 10, // Thay đổi từ left: 10
             zIndex: 1002,
             width: 420,
             background: "#fff",
@@ -803,27 +773,49 @@ const CHXDGMap = () => {
                   <>
                     <span style={{ color: "#007aff", fontWeight: "600" }}>
                       {targetStation.price.toLocaleString()} đ/L
-                    </span>
-                    {targetStation.price > 0 && targetStation.price_change !== undefined && targetStation.price_change !== 0 && (() => {
-                      const changeColors = getPriceChangeColor(targetStation.price_change);
+                    </span>                    
+                    {/* Kiểm tra kbetr_tt trước, sau đó mới quyết định hiển thị price_change hay "Chưa có giá" */}
+                    {targetStation.price > 0 && (() => {
+                      // Nếu không có kbetr_tt hoặc kbetr_tt = 0, hiển thị "Chưa có giá"
+                      if (!targetStation.kbetr_tt || Number(targetStation.kbetr_tt) === 0) {
                       return (
-                        <span style={{ 
-                          marginLeft: "10px", 
-                          fontSize: "13px", 
-                          fontWeight: "500",
-                          color: changeColors.color,
-                          background: changeColors.bg,
-                          padding: "4px 8px",
-                          borderRadius: "6px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "4px"
-                        }}>
-                          <i className={`bi ${targetStation.price_change > 0 ? "bi-caret-up-fill" : "bi-caret-down-fill"}`} style={{ fontSize: "10px" }}></i>
-                          {Math.abs(targetStation.price_change).toLocaleString()}đ
-                        </span>
-                      );
-                    })()}
+                      <span style={{ 
+                        marginLeft: "10px", 
+                        fontSize: "13px", 
+                        fontWeight: "400",
+                        color: "#86868b",
+                        fontStyle: "italic"
+                      }}>
+                        Chưa có giá
+                      </span>
+                        );
+                      }
+                      // Nếu có kbetr_tt và khác 0, kiểm tra price_change
+                      if (targetStation.price_change !== undefined && 
+                          targetStation.price_change !== null &&
+                          Number(targetStation.price_change) !== 0) {
+                        const changeColors = getPriceChangeColor(targetStation.price_change);
+                        return (
+                          <span style={{ 
+                            marginLeft: "10px", 
+                            fontSize: "13px", 
+                            fontWeight: "500",
+                            color: changeColors.color,
+                            background: changeColors.bg,
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px"
+                          }}>
+                            <i style={{ fontSize: "10px" }}></i>
+                            {targetStation.price_change.toLocaleString()}
+                          </span>
+                        );
+                      }
+                      // Nếu có kbetr_tt nhưng price_change = 0 hoặc không có, không hiển thị gì
+                      return null;
+                    })()}                    
                   </>
                 ) : (
                   <span style={{ color: "#86868b", fontStyle: "italic", fontWeight: "400" }}>
@@ -877,7 +869,7 @@ const CHXDGMap = () => {
       )}
 
       {/* Panel thống kê theo loại CHXD khi có BUKRS */}
-      {shouldShowListPanel && !targetStation && !showListPanel && (
+      { !showListPanel && (
         <button
           onClick={() => setShowListPanel(true)}
           style={{
@@ -901,7 +893,7 @@ const CHXDGMap = () => {
         </button>
       )}
 
-      {shouldShowListPanel && !targetStation && showListPanel && (
+      {showListPanel && (
         <div
           style={{
             position: "absolute",
@@ -979,7 +971,7 @@ const CHXDGMap = () => {
                   <span style={{ marginLeft: "auto", fontSize: 12, color: "#555" }}>{count} điểm</span>
                 </label>
 
-                {list.slice(0, 4).map(item => (
+                {list.slice(0, expandedCategories[key] ? list.length : 4).map(item => (
                   <div
                     key={item.id}
                     onClick={() => handleSelectStation(item.id)}
@@ -990,8 +982,24 @@ const CHXDGMap = () => {
                 ))}
 
                 {count > 4 && (
-                  <div style={{ paddingLeft: 26, marginTop: 6, fontSize: 12, color: "#2a5599" }}>
-                    {count - 4} khác
+                  <div 
+                    onClick={() => setExpandedCategories(prev => ({
+                      ...prev,
+                      [key]: !prev[key] // Toggle expanded state cho category này
+                    }))}
+                    style={{ 
+                      paddingLeft: 26, 
+                      marginTop: 6, 
+                      fontSize: 12, 
+                      color: "#2a5599",
+                      cursor: "pointer",
+                      fontWeight: 500,
+                      textDecoration: "underline"
+                    }}
+                  >
+                    {expandedCategories[key] 
+                      ? "Thu gọn" 
+                      : `${count - 4} khác`}
                   </div>
                 )}
               </div>
@@ -1005,8 +1013,8 @@ const CHXDGMap = () => {
         onClick={() => setShowControls(!showControls)}
         style={{
           position: "absolute",
-          top: 10,
-          right: 10,
+          bottom: 10, // Thay đổi từ top: 10
+          left: 10,   // Thay đổi từ right: 10
           zIndex: 1001,
           width: 30,
           height: 30,
@@ -1025,19 +1033,19 @@ const CHXDGMap = () => {
         ☰
       </button>
 
-      {/* --- Bộ điều khiển (controls) góc phải --- */}
+      {/* --- Bộ điều khiển (controls) góc trái dưới --- */}
       {showControls && (
         <div
           className="d-flex flex-column gap-2 position-absolute"
           style={{
-            top: 10,
+            bottom: 0,
             right: 10,
             zIndex: 1000,
             background: "rgba(255, 255, 255, 0.9)",
             borderRadius: 10,
             padding: "10px 12px",
             boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
-            alignItems: "flex-start", // Căn trái thay vì align-items-end
+            alignItems: "flex-start",
           }}
         >
           {/* Nút thu nhỏ */}
@@ -1089,7 +1097,25 @@ const CHXDGMap = () => {
               style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
             >
               Hiện text
-            </label>
+            </label>            
+          </div>
+
+          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="toggleText"
+              checked={showPrice}
+              onChange={() => setShowPrice(!showPrice)}
+              style={{ cursor: "pointer", marginRight: "8px" }}
+            />
+            <label
+              className="form-check-label"
+              htmlFor="toggleText"
+              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+            >
+              Chỉ hiện giá
+            </label>            
           </div>
 
           {/* Dropdown chọn loại bản đồ */}
