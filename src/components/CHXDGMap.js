@@ -117,14 +117,12 @@ const CHXDGMap = () => {
   const getPriceChangeColor = (priceChange) => {
     
       // Mức tăng - màu đỏ
-      if (priceChange > 300) {
-        return { color: "#d70015", bg: "rgba(214, 20, 39, 0.31)" }; 
-      } else if (priceChange > 200) {
-        return { color: "#ff3b30", bg: "rgba(221, 158, 21, 0.53)" };
+      if (priceChange > 200) {
+        return { color: "rgb(214, 20, 39)", bg: "rgba(255, 255, 255, 1)" }; 
       } else if (priceChange > 100) {
-        return { color: "#ff3b30", bg: "rgba(252, 255, 48, 0.55)" };
+        return { color: "rgb(252, 255, 48)", bg: "rgba(255, 255, 255, 1)" };
       } else {
-        return { color: "#28a745", bg: "rgba(28, 158, 58, 0.32)" };
+        return { color: "rgb(28, 158, 58)", bg: "rgba(255, 255, 255, 1)" };
       }    
   };
 
@@ -474,13 +472,14 @@ const CHXDGMap = () => {
       }
 
       // Giá chính - Màu xanh dương Apple
-      const priceHTML = c.price && c.price > 0
-        ? `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`
-        : `<span class="price-value" style="color:#86868b;font-size:11px;font-style:italic;font-weight:400;">Chưa có giá</span>`;
+      const priceHTML = `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`
 
       // Giá thay đổi (tăng/giảm) - Phân vùng màu theo mức độ
-      const priceChange = (c.price && c.price > 0) ? (c.price_change || 0) : 0;
+      const priceChange = c.price_change;
       const priceChangeColors = getPriceChangeColor(priceChange);
+      const priceChangeDisplay = priceChange > 0 
+        ? `+${priceChange.toLocaleString()}` 
+        : priceChange.toLocaleString();
       const priceChangeHTML = (c.price_flg && c.price_flg !== 0 && priceChange !== 0)
         ? `<span style="
             font-weight: 500;
@@ -494,7 +493,7 @@ const CHXDGMap = () => {
             gap: 2px;
           ">
             <i style="font-size: 10px;"></i>
-            ${priceChange.toLocaleString()}
+            ${priceChangeDisplay}
         </span>`
         : "";
 
@@ -769,60 +768,35 @@ const CHXDGMap = () => {
                 {targetStation.matnr_t}
               </div>
               <div style={{ fontSize: "20px", fontWeight: "600", color: "#1d1d1f", display: "flex", alignItems: "center", lineHeight: "1.2" }}>
-                {targetStation.price ? (
-                  <>
-                    <span style={{ color: "#007aff", fontWeight: "600" }}>
-                      {targetStation.price.toLocaleString()} đ/L
-                    </span>                    
-                    {/* Kiểm tra kbetr_tt trước, sau đó mới quyết định hiển thị price_change hay "Chưa có giá" */}
-                    {targetStation.price > 0 && (() => {
-                      // Nếu không có kbetr_tt hoặc kbetr_tt = 0, hiển thị "Chưa có giá"
-                      if (!targetStation.kbetr_tt || Number(targetStation.kbetr_tt) === 0) {
-                      return (
+                <>
+                  <span style={{ color: "#007aff", fontWeight: "600" }}>
+                    {targetStation.price.toLocaleString()} đ/L
+                  </span>                    
+                  {(() => {                      
+                    const changeColors = getPriceChangeColor(targetStation.price_change);
+                    const priceChangeDisplay = targetStation.price_change > 0 
+                      ? `+${targetStation.price_change.toLocaleString()}` 
+                      : targetStation.price_change.toLocaleString();
+                    return (
                       <span style={{ 
                         marginLeft: "10px", 
                         fontSize: "13px", 
-                        fontWeight: "400",
-                        color: "#86868b",
-                        fontStyle: "italic"
+                        fontWeight: "500",
+                        color: changeColors.color,
+                        background: changeColors.bg,
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
                       }}>
-                        Chưa có giá
+                        <i style={{ fontSize: "10px" }}></i>
+                        {priceChangeDisplay}
                       </span>
-                        );
-                      }
-                      // Nếu có kbetr_tt và khác 0, kiểm tra price_change
-                      if (targetStation.price_change !== undefined && 
-                          targetStation.price_change !== null &&
-                          Number(targetStation.price_change) !== 0) {
-                        const changeColors = getPriceChangeColor(targetStation.price_change);
-                        return (
-                          <span style={{ 
-                            marginLeft: "10px", 
-                            fontSize: "13px", 
-                            fontWeight: "500",
-                            color: changeColors.color,
-                            background: changeColors.bg,
-                            padding: "4px 8px",
-                            borderRadius: "6px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px"
-                          }}>
-                            <i style={{ fontSize: "10px" }}></i>
-                            {targetStation.price_change.toLocaleString()}
-                          </span>
-                        );
-                      }
-                      // Nếu có kbetr_tt nhưng price_change = 0 hoặc không có, không hiển thị gì
-                      return null;
-                    })()}                    
-                  </>
-                ) : (
-                  <span style={{ color: "#86868b", fontStyle: "italic", fontWeight: "400" }}>
-                    Chưa có giá
-                  </span>
-                )}
-              </div>
+                    );
+                  })()}                    
+                </>
+            </div>
             </div>
           </div>
           {targetStation.image && (
@@ -1114,7 +1088,7 @@ const CHXDGMap = () => {
               htmlFor="toggleText"
               style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
             >
-              Chỉ hiện giá
+              Hiện thị giá chênh lệch
             </label>            
           </div>
 
