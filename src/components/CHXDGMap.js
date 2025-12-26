@@ -168,7 +168,7 @@ const CHXDGMap = () => {
           matkl: i.MATKL,
           price: i.PRICE,
           price_change: i.PRICE_CHANGE,
-          price_flg: i.PRICE_FLG,
+          price_change_tt: i.PRICE_CHANGE_TT,
           kbetr_tt:i.KBETR_TT
         };
       }).filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng));
@@ -208,7 +208,7 @@ const CHXDGMap = () => {
                 matkl: detailItem.MATKL,
                 price: detailItem.PRICE,
                 price_change: detailItem.PRICE_CHANGE,
-                price_flg: detailItem.PRICE_FLG,
+                price_change_tt: detailItem.PRICE_CHANGE_TT,
                 kbetr_tt:detailItem.KBETR_TT
               };
 
@@ -480,22 +480,41 @@ const CHXDGMap = () => {
       const priceChangeDisplay = priceChange > 0 
         ? `+${priceChange.toLocaleString()}` 
         : priceChange.toLocaleString();
-      const priceChangeHTML = (c.price_flg && c.price_flg !== 0 && priceChange !== 0)
-        ? `<span style="
-            font-weight: 500;
-            font-size: 12px;
-            color: ${priceChangeColors.color};
-            background: ${priceChangeColors.bg};
-            padding: 3px 8px;
-            border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            gap: 2px;
-          ">
-            <i style="font-size: 10px;"></i>
-            ${priceChangeDisplay}
-        </span>`
-        : "";
+
+      const priceChangeTT = c.price_change_tt;
+      const priceChangeTTColors = getPriceChangeColor(priceChangeTT);
+      const priceChangeTTDisplay = priceChangeTT > 0 
+        ? `+${priceChangeTT.toLocaleString()}` 
+        : priceChangeTT.toLocaleString();     
+
+      const priceChangeHTML =
+        `<div style="display: inline-flex; align-items: center; gap: 0px;">
+          <span style="
+              font-weight: 500;
+              font-size: 12px;
+              color: ${priceChangeColors.color};
+              background: ${priceChangeColors.bg};
+              padding: 3px 6px 3px 6px;
+              border-radius: 6px;
+              display: inline-flex;
+              align-items: center;              
+            ">
+              ${priceChangeDisplay} 
+          </span>
+          <span style="color: #000">|</span>
+          <span style="
+              font-weight: 500;
+              font-size: 12px;
+              color: ${priceChangeTTColors.color};
+              background: ${priceChangeTTColors.bg};
+              padding: 3px 6px 3px 6px;
+              border-radius: 6px;
+              display: inline-flex;
+              align-items: center;
+            ">
+              ${priceChangeTTDisplay}
+          </span>
+        </div>`;
 
       // Kết hợp vào div chứa giá
       const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}${priceChangeHTML}</div>`;
@@ -777,22 +796,39 @@ const CHXDGMap = () => {
                     const priceChangeDisplay = targetStation.price_change > 0 
                       ? `+${targetStation.price_change.toLocaleString()}` 
                       : targetStation.price_change.toLocaleString();
+
+                    const changeTTColors = getPriceChangeColor(targetStation.price_change_tt);
+                    const priceChangeTTDisplay = targetStation.price_change_tt > 0 
+                      ? `+${targetStation.price_change_tt.toLocaleString()}` 
+                      : targetStation.price_change_tt.toLocaleString();
+
                     return (
-                      <span style={{ 
+                      <div style={{ 
                         marginLeft: "10px", 
                         fontSize: "13px", 
                         fontWeight: "500",
-                        color: changeColors.color,
-                        background: changeColors.bg,
-                        padding: "4px 8px",
-                        borderRadius: "6px",
-                        display: "flex",
+                        display: "inline-flex",
                         alignItems: "center",
-                        gap: "4px"
+                        gap: "0px"
                       }}>
-                        <i style={{ fontSize: "10px" }}></i>
-                        {priceChangeDisplay}
-                      </span>
+                        <span style={{ 
+                          color: changeColors.color,
+                          background: changeColors.bg,
+                          padding: "4px 6px",
+                          borderRadius: "6px"
+                        }}>
+                          {priceChangeDisplay}
+                        </span>
+                        <span style={{ color: "#000" }}>|</span>
+                        <span style={{ 
+                          color: changeTTColors.color,
+                          background: changeTTColors.bg,
+                          padding: "4px 6px",
+                          borderRadius: "6px"
+                        }}>
+                          {priceChangeTTDisplay}
+                        </span>
+                      </div>
                     );
                   })()}                    
                 </>
