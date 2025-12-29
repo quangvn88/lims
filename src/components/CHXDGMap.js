@@ -21,9 +21,9 @@ const CHXDGMap = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showLines, setShowLines] = useState(false);
-  const [showText, setShowText] = useState(true);
+  const [showText, setShowText] = useState(false);
   const [showPrice_Change, setShowPrice_Change] = useState(true);
-  const [showPrice_Change_TT, setShowPrice_Change_TT] = useState(true);
+  const [showPrice_Change_TT, setShowPrice_Change_TT] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapType, setMapType] = useState("satellite");
   const [showControls, setShowControls] = useState(true);
@@ -407,6 +407,28 @@ const CHXDGMap = () => {
       }),
     [coords, categoryFilters]
   );
+
+  // Tự động filter chỉ hiển thị PLX khi showPrice_Change_TT được chọn
+  useEffect(() => {
+    if (showPrice_Change_TT) {
+      setCategoryFilters({
+        PLX: true,
+        PVI: false,
+        OTH: false,
+        NEW: false,
+        TNNQ: false,
+      });
+    } else {
+      // Khi tắt showPrice_Change_TT, khôi phục về trạng thái mặc định
+      setCategoryFilters({
+        PLX: true,
+        PVI: true,
+        OTH: true,
+        NEW: true,
+        TNNQ: true,
+      });
+    }
+  }, [showPrice_Change_TT]);
 
   // 3. Marker + label
   useEffect(() => {
