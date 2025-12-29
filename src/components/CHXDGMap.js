@@ -22,7 +22,8 @@ const CHXDGMap = () => {
   const [error, setError] = useState("");
   const [showLines, setShowLines] = useState(false);
   const [showText, setShowText] = useState(true);
-  const [showPrice, setShowPrice] = useState(true);
+  const [showPrice_Change, setShowPrice_Change] = useState(true);
+  const [showPrice_Change_TT, setShowPrice_Change_TT] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapType, setMapType] = useState("satellite");
   const [showControls, setShowControls] = useState(true);
@@ -487,8 +488,12 @@ const CHXDGMap = () => {
         ? `+${priceChangeTT.toLocaleString()}` 
         : priceChangeTT.toLocaleString();     
 
-      const priceChangeHTML =
-        `<div style="display: inline-flex; align-items: center; gap: 0px;">
+      // Tạo priceChangeHTML dựa trên các toggle
+      let priceChangeHTML = "";
+      const parts = [];
+      
+      if (showPrice_Change) {
+        parts.push(`
           <span style="
               font-weight: 500;
               font-size: 12px;
@@ -501,7 +506,11 @@ const CHXDGMap = () => {
             ">
               ${priceChangeDisplay} 
           </span>
-          <span style="color: #000">|</span>
+        `);
+      }
+      
+      if (showPrice_Change_TT) {
+        parts.push(`
           <span style="
               font-weight: 500;
               font-size: 12px;
@@ -514,10 +523,14 @@ const CHXDGMap = () => {
             ">
               ${priceChangeTTDisplay}
           </span>
+        `);
+      }
+      
+      if (parts.length > 0) {
+        priceChangeHTML = `<div style="display: inline-flex; align-items: center; gap: 0px;">
+          ${parts.join('<span style="color: #000">|</span>')}
         </div>`;
-
-      // Kết hợp vào div chứa giá
-      const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}${priceChangeHTML}</div>`;
+      }            
 
       // Tính toán font-size tự động dựa trên độ dài title
       const maxTitleLength = 20;
@@ -528,30 +541,27 @@ const CHXDGMap = () => {
         const scaleFactor = maxTitleLength / titleLength;
         titleFontSize = Math.max(fs * scaleFactor, fs * 0.7);
       }
+      
+      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${isTarget ? "600" : "500"}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${c.title}</div>`;      
+      const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}</div>`;
+      
+      // Gộp labelTitleHTML và priceDivHTML thành một
+      const labelAndPriceHTML = showText ? `${labelTitleHTML}${priceDivHTML}` : "";
 
-      // Luôn tạo label - Cập nhật màu title theo phong cách Apple
-      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${isTarget ? "600" : "500"}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${c.title}</div>`;
-
-      const labelHTML = showPrice
-        ? (priceChangeHTML 
-            ? `
-              <div style="
-                background: rgba(255,255,255,0.95);
-                border: none;
-                border-radius: 6px;
-                padding: 0;
-                display: inline-block;
-                white-space: nowrap;
-                margin-left: 6px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-                ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
-                transition: opacity 0.3s, box-shadow 0.2s;
-              ">
-                ${priceChangeHTML}
-              </div>
-            `
-            : "")
-        : `
+      // Tạo labelHTML bằng cách kết hợp các phần dựa trên các tùy chọn
+      const labelParts = [];
+      
+      if (labelAndPriceHTML.trim()) {
+        labelParts.push(labelAndPriceHTML);
+      }
+      
+      if (priceChangeHTML) {
+        labelParts.push(priceChangeHTML);
+      }
+      
+      // Chỉ tạo labelHTML nếu có ít nhất một phần
+      const labelHTML = labelParts.length > 0
+        ? `
           <div style="
             background: rgba(255,255,255,0.98);
             border: 1.5px solid ${isTarget ? "#ff3b30" : "#d2d2d7"};
@@ -568,10 +578,10 @@ const CHXDGMap = () => {
             ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
             transition: opacity 0.3s, box-shadow 0.2s;
           ">
-            ${labelTitleHTML}
-            ${priceDivHTML}
+            ${labelParts.join('')}
           </div>
-        `;
+        `
+        : "";
 
       const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });      
       const textMarker = L.marker([c.lat,c.lng], { 
@@ -600,10 +610,8 @@ const CHXDGMap = () => {
         targetMarker = marker;
         targetTextMarker = textMarker;
       } else {
-        // Thêm các marker khác vào ngay
         markerGroup.addLayer(marker);
-        // Chỉ thêm textMarker nếu showText = true
-        if (showText) {
+        if (showText || showPrice_Change || showPrice_Change_TT) {
           markerGroup.addLayer(textMarker);
         }
       }
@@ -612,8 +620,8 @@ const CHXDGMap = () => {
     // Thêm target marker vào sau cùng để nó luôn ở trên cùng
     if (targetMarker && targetTextMarker) {
       markerGroup.addLayer(targetMarker);
-      // Chỉ thêm targetTextMarker nếu showText = true
-      if (showText) {
+      // Chỉ thêm targetTextMarker nếu một trong 3 tùy chọn được bật
+      if (showText || showPrice_Change || showPrice_Change_TT) {
         markerGroup.addLayer(targetTextMarker);
       }
     }
@@ -632,7 +640,7 @@ const CHXDGMap = () => {
 
       initialViewSet.current = true; // đánh dấu đã set view
     }
-  }, [visibleCoords, targetId, mapLoaded, showText, showPrice]); 
+  }, [visibleCoords, targetId, mapLoaded, showText, showPrice_Change, showPrice_Change_TT]); 
 
   // 4. Polyline toggle
   useEffect(() => {
@@ -802,6 +810,38 @@ const CHXDGMap = () => {
                       ? `+${targetStation.price_change_tt.toLocaleString()}` 
                       : targetStation.price_change_tt.toLocaleString();
 
+                    const parts = [];
+                    
+                    if (showPrice_Change) {
+                      parts.push(
+                        <span key="priceChange" style={{ 
+                          color: changeColors.color,
+                          background: changeColors.bg,
+                          padding: "4px 6px",
+                          borderRadius: "6px"
+                        }}>
+                          {priceChangeDisplay}
+                        </span>
+                      );
+                    }
+                    
+                    if (showPrice_Change_TT) {
+                      parts.push(
+                        <span key="priceChangeTT" style={{ 
+                          color: changeTTColors.color,
+                          background: changeTTColors.bg,
+                          padding: "4px 6px",
+                          borderRadius: "6px"
+                        }}>
+                          {priceChangeTTDisplay}
+                        </span>
+                      );
+                    }
+                    
+                    if (parts.length === 0) {
+                      return null;
+                    }
+                    
                     return (
                       <div style={{ 
                         marginLeft: "10px", 
@@ -811,23 +851,14 @@ const CHXDGMap = () => {
                         alignItems: "center",
                         gap: "0px"
                       }}>
-                        <span style={{ 
-                          color: changeColors.color,
-                          background: changeColors.bg,
-                          padding: "4px 6px",
-                          borderRadius: "6px"
-                        }}>
-                          {priceChangeDisplay}
-                        </span>
-                        <span style={{ color: "#000" }}>|</span>
-                        <span style={{ 
-                          color: changeTTColors.color,
-                          background: changeTTColors.bg,
-                          padding: "4px 6px",
-                          borderRadius: "6px"
-                        }}>
-                          {priceChangeTTDisplay}
-                        </span>
+                        {parts.map((part, index) => (
+                          <React.Fragment key={index}>
+                            {part}
+                            {index < parts.length - 1 && (
+                              <span style={{ color: "#000" }}>|</span>
+                            )}
+                          </React.Fragment>
+                        ))}
                       </div>
                     );
                   })()}                    
@@ -1106,7 +1137,7 @@ const CHXDGMap = () => {
               htmlFor="toggleText"
               style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
             >
-              Hiện text
+              Hiện thông tin
             </label>            
           </div>
 
@@ -1115,8 +1146,8 @@ const CHXDGMap = () => {
               className="form-check-input"
               type="checkbox"
               id="toggleText"
-              checked={showPrice}
-              onChange={() => setShowPrice(!showPrice)}
+              checked={showPrice_Change}
+              onChange={() => setShowPrice_Change(!showPrice_Change)}
               style={{ cursor: "pointer", marginRight: "8px" }}
             />
             <label
@@ -1124,7 +1155,25 @@ const CHXDGMap = () => {
               htmlFor="toggleText"
               style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
             >
-              Hiện thị giá chênh lệch
+              CL giá vùng 1
+            </label>            
+          </div>
+
+          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="toggleText"
+              checked={showPrice_Change_TT}
+              onChange={() => setShowPrice_Change_TT(!showPrice_Change_TT )}
+              style={{ cursor: "pointer", marginRight: "8px" }}
+            />
+            <label
+              className="form-check-label"
+              htmlFor="toggleText"
+              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+            >
+              CL giá so với vùng
             </label>            
           </div>
 
