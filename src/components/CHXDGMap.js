@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { useLocation } from "react-router-dom";
 import { BASE_URL, API, API_USER, API_PASSWORD } from "../config";
 import L from "leaflet";
@@ -8,9 +14,12 @@ import MapTypeSelect from "./MapTypeSelect";
 const CHXDGMap = () => {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const bukrsParam = searchParams.get("I_BUKRS") || searchParams.get("i_bukrs") || "";
-  const chxdIdParam = searchParams.get("i_chxdid") || searchParams.get("I_CHXDID") || "";
-  const matnrParam = searchParams.get("i_matnr") || searchParams.get("I_MATNR") || "";
+  const bukrsParam =
+    searchParams.get("I_BUKRS") || searchParams.get("i_bukrs") || "";
+  const chxdIdParam =
+    searchParams.get("i_chxdid") || searchParams.get("I_CHXDID") || "";
+  const matnrParam =
+    searchParams.get("i_matnr") || searchParams.get("I_MATNR") || "";
   const targetId = chxdIdParam;
 
   const mapRef = useRef(null);
@@ -42,10 +51,11 @@ const CHXDGMap = () => {
     TNNQ: true,
   });
   const [zoom, setZoom] = useState(6);
-  const [imageReady, setImageReady] = useState(false); 
+  const [imageReady, setImageReady] = useState(false);
 
-  // Thêm state để track expanded categories (sau các state declarations)
   const [expandedCategories, setExpandedCategories] = useState({});
+
+  const [bukrs_title, setBukrs_title] = useState("");
 
   // Constants
   const CONSTANTS = {
@@ -110,11 +120,17 @@ const CHXDGMap = () => {
 
   const getPriceChangeColor = useCallback((priceChange) => {
     if (priceChange > 200) {
-      return { color: "rgb(214, 20, 39)", bg: "rgba(255, 255, 255, 1)" };
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(8, 102, 30, 1)" };
     } else if (priceChange > 100) {
-      return { color: "rgb(252, 255, 48)", bg: "rgba(255, 255, 255, 1)" };
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(44, 155, 68, 1)" };
+    } else if (priceChange >= 0) {
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(69, 177, 93, 1)" };
+    } else if (priceChange < -200) {
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(150, 10, 24, 1)" };
+    } else if (priceChange < -100) {
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(204, 24, 42, 1)" };
     } else {
-      return { color: "rgb(28, 158, 58)", bg: "rgba(255, 255, 255, 1)" };
+      return { color: "rgba(255, 255, 255, 1)", bg: "rgba(241, 54, 21, 1)" };
     }
   }, []);
 
@@ -135,13 +151,17 @@ const CHXDGMap = () => {
       return baseFontSize;
     }
     const scaleFactor = CONSTANTS.MAX_TITLE_LENGTH / titleLength;
-    return Math.max(baseFontSize * scaleFactor, baseFontSize * CONSTANTS.MIN_TITLE_FONT_SCALE);
+    return Math.max(
+      baseFontSize * scaleFactor,
+      baseFontSize * CONSTANTS.MIN_TITLE_FONT_SCALE
+    );
   }, []);
 
   const transformStationData = useCallback((item) => {
     const mime = "image/jpeg";
     const base64Img = item.BASE64 ? `data:${mime};base64,${item.BASE64}` : "";
-    const urlImg = item.IMAGE_URL || item.IMG_URL || item.ZIMG || item.IMG || "";
+    const urlImg =
+      item.IMAGE_URL || item.IMG_URL || item.ZIMG || item.IMG || "";
     return {
       id: item.CHXD_ID,
       title: item.CHXD_T || "Cửa hàng không tên",
@@ -158,27 +178,29 @@ const CHXDGMap = () => {
       price_change_tt: item.PRICE_CHANGE_TT,
       kbetr_tt: item.KBETR_TT,
       kbetr_v1: item.KBETR_V1,
-      kbetr_max: item.KBETR_MAX
+      kbetr_max: item.KBETR_MAX,
     };
   }, []);
 
-  const createPriceChangeHTML = useCallback((c, showPrice_Change, showPrice_Change_TT) => {
-    const parts = [];
-    
-    const hasPriceChangeData = c.price > 0 && c.kbetr_v1 > 0;
-    if (showPrice_Change && hasPriceChangeData) {
-      const priceChangeColors = getPriceChangeColor(c.price_change);
-      const priceChangeDisplay = c.price_change > 0 
-        ? `+${c.price_change.toLocaleString()}` 
-        : c.price_change.toLocaleString();
-      
-      parts.push(`
+  const createPriceChangeHTML = useCallback(
+    (c, showPrice_Change, showPrice_Change_TT) => {
+      const parts = [];
+
+      const hasPriceChangeData = c.price > 0 && c.kbetr_v1 > 0;
+      if (showPrice_Change && hasPriceChangeData) {
+        const priceChangeColors = getPriceChangeColor(c.price_change);
+        const priceChangeDisplay =
+          c.price_change > 0
+            ? `+${c.price_change.toLocaleString()}`
+            : c.price_change.toLocaleString();
+
+        parts.push(`
         <span style="
             font-weight: 500;
             font-size: 12px;
             color: ${priceChangeColors.color};
             background: ${priceChangeColors.bg};
-            padding: 3px 6px 3px 6px;
+            padding: 1px 3px 1px 3px;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
@@ -186,22 +208,23 @@ const CHXDGMap = () => {
             ${priceChangeDisplay} 
         </span>
       `);
-    }
-    
-    const hasPriceChangeTTData = c.kbetr_tt > 0 && c.kbetr_max > 0;
-    if (showPrice_Change_TT && hasPriceChangeTTData) {
-      const priceChangeTTColors = getPriceChangeColor(c.price_change_tt);
-      const priceChangeTTDisplay = c.price_change_tt > 0 
-        ? `+${c.price_change_tt.toLocaleString()}` 
-        : c.price_change_tt.toLocaleString();
-      
-      parts.push(`
+      }
+
+      const hasPriceChangeTTData = c.kbetr_tt > 0 && c.kbetr_max > 0;
+      if (showPrice_Change_TT && hasPriceChangeTTData) {
+        const priceChangeTTColors = getPriceChangeColor(c.price_change_tt);
+        const priceChangeTTDisplay =
+          c.price_change_tt > 0
+            ? `+${c.price_change_tt.toLocaleString()}`
+            : c.price_change_tt.toLocaleString();
+
+        parts.push(`
         <span style="
             font-weight: 500;
             font-size: 12px;
             color: ${priceChangeTTColors.color};
             background: ${priceChangeTTColors.bg};
-            padding: 3px 6px 3px 6px;
+            padding: 1px 3px 1px 3px;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
@@ -209,22 +232,27 @@ const CHXDGMap = () => {
             ${priceChangeTTDisplay}
         </span>
       `);
-    }
-    
-    return parts.length > 0
-      ? `<div style="display: inline-flex; align-items: center; gap: 0px;">
+      }
+
+      return parts.length > 0
+        ? `<div style="display: inline-flex; align-items: center; gap: 0px;">
           ${parts.join('<span style="color: #000">|</span>')}
         </div>`
-      : "";
-  }, [getPriceChangeColor]);
+        : "";
+    },
+    [getPriceChangeColor]
+  );
 
-  const handleSelectStation = useCallback((id) => {
-    if (!id) return;
-    const params = new URLSearchParams(location.search);
-    if (bukrsParam) params.set("i_bukrs", bukrsParam);
-    params.set("i_chxdid", id);
-    window.location.search = params.toString();
-  }, [location.search, bukrsParam]);
+  const handleSelectStation = useCallback(
+    (id) => {
+      if (!id) return;
+      const params = new URLSearchParams(location.search);
+      if (bukrsParam) params.set("i_bukrs", bukrsParam);
+      params.set("i_chxdid", id);
+      window.location.search = params.toString();
+    },
+    [location.search, bukrsParam]
+  );
 
   const handleMapTypeChange = useCallback((type) => {
     setMapType(type);
@@ -238,8 +266,8 @@ const CHXDGMap = () => {
         ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-    L.tileLayer(url, { 
-      maxZoom: 18, 
+    L.tileLayer(url, {
+      maxZoom: 18,
       attribution: "&copy; OpenStreetMap contributors",
       updateWhenZooming: false,
       updateWhenIdle: true,
@@ -247,7 +275,7 @@ const CHXDGMap = () => {
       maxNativeZoom: 18,
       tileSize: 256,
       zoomOffset: 0,
-      crossOrigin: true
+      crossOrigin: true,
     }).addTo(mapRef.current);
   }, []);
 
@@ -263,9 +291,30 @@ const CHXDGMap = () => {
     try {
       setLoading(true);
       const token = btoa(`${API_USER}:${API_PASSWORD}`);
+
+      const resMDCcd = await fetch(`${BASE_URL}${API}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Basic ${token}`,
+        },
+        body: JSON.stringify({
+          FUNC: "ZFM_MD_BUKRS",
+          DATA: { I_VALUE: bukrsParam },
+        }),
+      });
+
+      if (!resMDCcd.ok)
+        throw new Error(`HTTP error! status: ${resMDCcd.status}`);
+      const dataMDCcd = await resMDCcd.json();
+      setBukrs_title(dataMDCcd?.RESPONSE?.E_DATA?.BUTXT || bukrsParam);
+
       const res = await fetch(`${BASE_URL}${API}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Basic ${token}`,
+        },
         body: JSON.stringify({
           FUNC: "ZFM_CHXD_GMAP",
           DATA: { I_BUKRS: bukrsParam, I_MATNR: matnrParam },
@@ -275,32 +324,41 @@ const CHXDGMap = () => {
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
       const data = await res.json();
-      
-      const list = data.RESPONSE.T_DATA
-        .map(transformStationData)
-        .filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lng));
-          
+
+      const list = data.RESPONSE.T_DATA.map(transformStationData).filter(
+        (x) => Number.isFinite(x.lat) && Number.isFinite(x.lng)
+      );
+
       // Nếu có chxdIdParam, lấy thêm dữ liệu chi tiết cho CHXD đó
       if (chxdIdParam) {
         try {
           const detailRes = await fetch(`${BASE_URL}${API}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Basic ${token}` },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${token}`,
+            },
             body: JSON.stringify({
               FUNC: "ZFM_CHXD_GMAP",
-              DATA: { I_BUKRS: bukrsParam, I_CHXD_ID: chxdIdParam, I_MATNR: matnrParam },
+              DATA: {
+                I_BUKRS: bukrsParam,
+                I_CHXD_ID: chxdIdParam,
+                I_MATNR: matnrParam,
+              },
             }),
           });
 
           if (detailRes.ok) {
             const detailData = await detailRes.json();
             const tData = detailData?.RESPONSE?.T_DATA;
-            
+
             if (tData && tData.length > 0) {
               const detailInfo = transformStationData(tData[0]);
 
               // Kiểm tra xem CHXD đã có trong list chưa
-              const existingIndex = list.findIndex(x => x.id === detailInfo.id);
+              const existingIndex = list.findIndex(
+                (x) => x.id === detailInfo.id
+              );
               if (existingIndex >= 0) {
                 // Cập nhật thông tin chi tiết (đặc biệt là image base64) nếu đã có
                 list[existingIndex] = { ...list[existingIndex], ...detailInfo };
@@ -330,7 +388,6 @@ const CHXDGMap = () => {
     fetchCHXDList();
   }, [fetchCHXDList]);
 
-  // Update showTextRef when showText changes
   useEffect(() => {
     showTextRef.current = showText;
   }, [showText]);
@@ -338,26 +395,26 @@ const CHXDGMap = () => {
   // Map initialization
   useEffect(() => {
     if (!mapRef.current) {
-      mapRef.current = L.map("map", { 
-        center: CONSTANTS.MAP_CENTER, 
+      mapRef.current = L.map("map", {
+        center: CONSTANTS.MAP_CENTER,
         zoom: CONSTANTS.MAP_INITIAL_ZOOM,
         zoomAnimation: true,
         zoomAnimationThreshold: 4,
         fadeAnimation: true,
-        markerZoomAnimation: false
+        markerZoomAnimation: false,
       });
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { 
-          maxZoom: 18, 
-          attribution: '&copy; OpenStreetMap contributors',
+        {
+          maxZoom: 18,
+          attribution: "&copy; OpenStreetMap contributors",
           updateWhenZooming: false,
           updateWhenIdle: true,
           keepBuffer: 1,
           maxNativeZoom: 18,
           tileSize: 256,
           zoomOffset: 0,
-          crossOrigin: true
+          crossOrigin: true,
         }
       ).addTo(mapRef.current);
       markerGroupRef.current = L.featureGroup().addTo(mapRef.current);
@@ -366,15 +423,17 @@ const CHXDGMap = () => {
       const handleZoomEnd = () => {
         const z = mapRef.current.getZoom();
         setZoom(z);
-        
+
         requestAnimationFrame(() => {
           const mg = markerGroupRef.current;
           if (mg) {
-            mg.eachLayer(layer => {
+            mg.eachLayer((layer) => {
               if (layer.options?.icon?.options?.className === "plx-label") {
                 const el = layer.getElement();
                 if (el) {
-                  el.style.opacity = showTextRef.current ? 1 : computeLabelOpacity(z);
+                  el.style.opacity = showTextRef.current
+                    ? 1
+                    : computeLabelOpacity(z);
                 }
               }
             });
@@ -412,8 +471,13 @@ const CHXDGMap = () => {
         const size = getMarkerSize(currentZoom);
         const fontSize = getFontSize(currentZoom);
 
-        markerGroup.eachLayer(layer => {
-          if (layer instanceof L.Marker && layer.options.icon && layer.options.icon.options && layer.options.icon.options.iconUrl) {
+        markerGroup.eachLayer((layer) => {
+          if (
+            layer instanceof L.Marker &&
+            layer.options.icon &&
+            layer.options.icon.options &&
+            layer.options.icon.options.iconUrl
+          ) {
             const oldIcon = layer.options.icon;
             const newIcon = L.icon({
               iconUrl: oldIcon.options.iconUrl,
@@ -424,11 +488,19 @@ const CHXDGMap = () => {
             layer.setIcon(newIcon);
           }
 
-          if (layer instanceof L.Marker && layer.options.icon && layer.options.icon.options && layer.options.icon.options.className === "plx-label") {
+          if (
+            layer instanceof L.Marker &&
+            layer.options.icon &&
+            layer.options.icon.options &&
+            layer.options.icon.options.className === "plx-label"
+          ) {
             const oldHtml = layer.options.icon.options.html || "";
             let newHtml;
             if (/\bfont-size:\s*\d+px/.test(oldHtml)) {
-              newHtml = oldHtml.replace(/font-size:\s*\d+px/g, `font-size:${fontSize}px`);
+              newHtml = oldHtml.replace(
+                /font-size:\s*\d+px/g,
+                `font-size:${fontSize}px`
+              );
             } else {
               newHtml = oldHtml.replace(/style="([^"]*)"/, (m, p1) => {
                 return `style="${p1}; font-size:${fontSize}px"`;
@@ -437,7 +509,7 @@ const CHXDGMap = () => {
 
             const newDivIcon = L.divIcon({
               ...layer.options.icon.options,
-              html: newHtml
+              html: newHtml,
             });
 
             layer.setIcon(newDivIcon);
@@ -460,23 +532,36 @@ const CHXDGMap = () => {
         clearTimeout(zoomUpdateTimeoutRef.current);
       }
     };
-  }, [zoom, showText, showPrice_Change, showPrice_Change_TT, getMarkerSize, getFontSize]);
+  }, [
+    zoom,
+    showText,
+    showPrice_Change,
+    showPrice_Change_TT,
+    getMarkerSize,
+    getFontSize,
+  ]);
 
-  const typeMeta = useMemo(() => ({
-    PLX: { label: "PLX", color: "#0d6efd" },
-    PVI: { label: "PVOIL", color: "#2fb344" },
-    OTH: { label: "KHÁC", color: "#f59f00" },
-    NEW: { label: "ĐẦU TƯ MỚI", color: "#d6336c" },
-    TNNQ: { label: "THƯƠNG NHÂN NHƯỢNG QUYỀN", color: "#6c757d" },
-  }), []);
+  const typeMeta = useMemo(
+    () => ({
+      PLX: { label: "PLX", color: "#0d6efd" },
+      PVI: { label: "PVOIL", color: "#2fb344" },
+      OTH: { label: "KHÁC", color: "#f59f00" },
+      NEW: { label: "ĐẦU TƯ MỚI", color: "#d6336c" },
+      TNNQ: { label: "THƯƠNG NHÂN NHƯỢNG QUYỀN", color: "#6c757d" },
+    }),
+    []
+  );
 
-  const categoryList = useMemo(() => [
-    { key: "PLX", filterKey: "PLX" },
-    { key: "PVI", filterKey: "PVI" },
-    { key: "TNNQ", filterKey: "TNNQ" },
-    { key: "NEW", filterKey: "NEW" },
-    { key: "OTH", filterKey: "OTH" },
-  ], []);
+  const categoryList = useMemo(
+    () => [
+      { key: "PLX", filterKey: "PLX" },
+      { key: "PVI", filterKey: "PVI" },
+      { key: "TNNQ", filterKey: "TNNQ" },
+      { key: "NEW", filterKey: "NEW" },
+      { key: "OTH", filterKey: "OTH" },
+    ],
+    []
+  );
 
   const resolveType = useCallback((c) => {
     const t = (c.chxd_type || "").toUpperCase();
@@ -535,9 +620,7 @@ const CHXDGMap = () => {
     const markerGroup = markerGroupRef.current;
     markerGroup.clearLayers();
 
-    const target = visibleCoords.find(x => x.id === targetId);
-    
-    const hideMarkerTooltip = false;//!!chxdIdParam;
+    const hideMarkerTooltip = false;
 
     // Lấy zoom hiện tại từ map để đảm bảo chính xác
     const currentZoom = map.getZoom() || zoom;
@@ -546,17 +629,22 @@ const CHXDGMap = () => {
     let targetMarker = null;
     let targetTextMarker = null;
 
-    visibleCoords.forEach(c => {
+    visibleCoords.forEach((c) => {
       const size = getMarkerSize(currentZoom);
       const fs = getFontSize(currentZoom);
 
       const isTarget = c.id === targetId;
       const iconUrl = getIconUrl(c.chxd_type);
 
-      const markerIcon = L.icon({ iconUrl, iconSize: [size, size], iconAnchor:[size / 2, size], popupAnchor:[0,-25] });
-      const marker = L.marker([c.lat,c.lng], { 
+      const markerIcon = L.icon({
+        iconUrl,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size],
+        popupAnchor: [0, -25],
+      });
+      const marker = L.marker([c.lat, c.lng], {
         icon: markerIcon,
-        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target marker luôn ở trên khi có chxdIdParam
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0, // Target marker luôn ở trên khi có chxdIdParam
       });
 
       marker.on("click", () => {
@@ -567,38 +655,49 @@ const CHXDGMap = () => {
         marker.bindPopup(`
           <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i>
         `);
-        marker.on("mouseover", ()=>marker.openPopup());
-        marker.on("mouseout", ()=>marker.closePopup());
+        marker.on("mouseover", () => marker.openPopup());
+        marker.on("mouseout", () => marker.closePopup());
       }
 
       // Giá chính - Màu xanh dương Apple
       const priceHTML = `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`;
 
-      const priceChangeHTML = createPriceChangeHTML(c, showPrice_Change, showPrice_Change_TT);            
+      const priceChangeHTML = createPriceChangeHTML(
+        c,
+        showPrice_Change,
+        showPrice_Change_TT
+      );
 
       // Tính toán font-size tự động dựa trên độ dài title
       const titleFontSize = calculateTitleFontSize(c.title.length, fs);
-      
-      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${isTarget ? "600" : "500"}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${c.title}</div>`;      
+
+      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${
+        isTarget ? "600" : "500"
+      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${
+        c.title
+      }</div>`;
       const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}</div>`;
-      
+
       // Gộp labelTitleHTML và priceDivHTML thành một
-      const labelAndPriceHTML = showText ? `${labelTitleHTML}${priceDivHTML}` : "";
+      const labelAndPriceHTML = showText
+        ? `${labelTitleHTML}${priceDivHTML}`
+        : "";
 
       // Tạo labelHTML bằng cách kết hợp các phần dựa trên các tùy chọn
       const labelParts = [];
-      
+
       if (labelAndPriceHTML.trim()) {
         labelParts.push(labelAndPriceHTML);
       }
-      
+
       if (priceChangeHTML) {
         labelParts.push(priceChangeHTML);
       }
-      
+
       // Chỉ tạo labelHTML nếu có ít nhất một phần
-      const labelHTML = labelParts.length > 0
-        ? `
+      const labelHTML =
+        labelParts.length > 0
+          ? `
           <div style="
             background: rgba(255,255,255,0.98);
             border: 1.5px solid ${isTarget ? "#ff3b30" : "#d2d2d7"};
@@ -615,17 +714,22 @@ const CHXDGMap = () => {
             ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
             transition: opacity 0.3s, box-shadow 0.2s;
           ">
-            ${labelParts.join('')}
+            ${labelParts.join("")}
           </div>
         `
-        : "";
+          : "";
 
-      const labelIcon = L.divIcon({ html: labelHTML, className:"plx-label", iconSize:null, iconAnchor:[-5,15] });      
-      const textMarker = L.marker([c.lat,c.lng], { 
-        icon: labelIcon, 
-        interactive: true, 
+      const labelIcon = L.divIcon({
+        html: labelHTML,
+        className: "plx-label",
+        iconSize: null,
+        iconAnchor: [-5, 15],
+      });
+      const textMarker = L.marker([c.lat, c.lng], {
+        icon: labelIcon,
+        interactive: true,
         bubblingMouseEvents: false,
-        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0 // Target label luôn ở trên
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0, // Target label luôn ở trên
       });
 
       // Nếu là target marker, lưu lại để thêm vào sau cùng
@@ -650,39 +754,61 @@ const CHXDGMap = () => {
     }
 
     if (!initialViewSet.current) {
-      const target = visibleCoords.find(x => x.id === targetId);
-      
+      const target = visibleCoords.find((x) => x.id === targetId);
+
       if (target) {
         // Nếu có target, zoom trực tiếp vào target
-        map.setView([target.lat, target.lng], CONSTANTS.MAP_TARGET_ZOOM, { animate: true });
+        map.setView([target.lat, target.lng], CONSTANTS.MAP_TARGET_ZOOM, {
+          animate: true,
+        });
       } else {
         // Nếu không có target, fit bounds cho tất cả
-        const bounds = L.latLngBounds(visibleCoords.map(c => [c.lat, c.lng]));
-        map.fitBounds(bounds, { padding: [60, 60], maxZoom: CONSTANTS.MAP_TARGET_ZOOM });
+        const bounds = L.latLngBounds(visibleCoords.map((c) => [c.lat, c.lng]));
+        map.fitBounds(bounds, {
+          padding: [60, 60],
+          maxZoom: CONSTANTS.MAP_TARGET_ZOOM,
+        });
       }
 
       initialViewSet.current = true;
     }
-  }, [visibleCoords, targetId, mapLoaded, showText, showPrice_Change, showPrice_Change_TT, zoom, chxdIdParam, getIconUrl, createPriceChangeHTML, getMarkerSize, getFontSize, handleSelectStation, calculateTitleFontSize]); 
+  }, [
+    visibleCoords,
+    targetId,
+    mapLoaded,
+    showText,
+    showPrice_Change,
+    showPrice_Change_TT,
+    zoom,
+    chxdIdParam,
+    getIconUrl,
+    createPriceChangeHTML,
+    getMarkerSize,
+    getFontSize,
+    handleSelectStation,
+    calculateTitleFontSize,
+  ]);
 
   // Calculate distance between two points
   const getDistance = useCallback((a, b) => {
     const R = CONSTANTS.EARTH_RADIUS_KM;
     const dLat = ((b.lat - a.lat) * Math.PI) / 180;
     const dLon = ((b.lng - a.lng) * Math.PI) / 180;
-    const lat1 = a.lat * Math.PI / 180;
-    const lat2 = b.lat * Math.PI / 180;
-    const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const x =
+      Math.sin(dLat / 2) ** 2 +
+      Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
     return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   }, []);
 
   // Calculate nearest stations
   const nearestStations = useMemo(() => {
-    const target = coords.find(x => x.id === targetId);
+    const target = coords.find((x) => x.id === targetId);
     if (!target || !showLines) return [];
     return coords
-      .filter(c => c.id !== target.id)
-      .map(p => ({ ...p, distance: getDistance(target, p) }))
+      .filter((c) => c.id !== target.id)
+      .map((p) => ({ ...p, distance: getDistance(target, p) }))
       .sort((a, b) => a.distance - b.distance)
       .slice(0, CONSTANTS.NEAREST_STATIONS_COUNT);
   }, [coords, targetId, showLines, getDistance]);
@@ -692,15 +818,25 @@ const CHXDGMap = () => {
     if (!mapRef.current || nearestStations.length === 0) return;
     const map = mapRef.current;
     const lineGroup = lineGroupRef.current;
-    const target = coords.find(x => x.id === targetId);
+    const target = coords.find((x) => x.id === targetId);
     if (!target) return;
 
     lineGroup.clearLayers();
 
-    nearestStations.forEach(p => {
+    nearestStations.forEach((p) => {
       const dist = p.distance.toFixed(2);
-      const line = L.polyline([[target.lat, target.lng], [p.lat, p.lng]], { color: "#ff8800", weight: 2, dashArray: "5,5", opacity: 0.8 });
-      line.bindTooltip(`${dist} km`, { permanent: true, className: "distance-tooltip", direction: "center" });
+      const line = L.polyline(
+        [
+          [target.lat, target.lng],
+          [p.lat, p.lng],
+        ],
+        { color: "#ff8800", weight: 2, dashArray: "5,5", opacity: 0.8 }
+      );
+      line.bindTooltip(`${dist} km`, {
+        permanent: true,
+        className: "distance-tooltip",
+        direction: "center",
+      });
       lineGroup.addLayer(line);
     });
 
@@ -708,76 +844,90 @@ const CHXDGMap = () => {
   }, [nearestStations, coords, targetId, getDistance]);
 
   const targetStation = useMemo(
-    () => visibleCoords.find(c => c.id === targetId),
+    () => visibleCoords.find((c) => c.id === targetId),
     [visibleCoords, targetId]
   );
 
   // Render price change display component
-  const renderPriceChangeDisplay = useCallback((station, showPrice_Change, showPrice_Change_TT) => {
-    if (!station) return null;
-    
-    const parts = [];
-    const hasPriceChangeData = station.price > 0 && station.kbetr_v1 > 0;
-    
-    if (showPrice_Change && hasPriceChangeData) {
-      const changeColors = getPriceChangeColor(station.price_change);
-      const priceChangeDisplay = station.price_change > 0 
-        ? `+${station.price_change.toLocaleString()}` 
-        : station.price_change.toLocaleString();
-      
-      parts.push(
-        <span key="priceChange" style={{ 
-          color: changeColors.color,
-          background: changeColors.bg,
-          padding: "4px 6px",
-          borderRadius: "6px"
-        }}>
-          {priceChangeDisplay}
-        </span>
+  const renderPriceChangeDisplay = useCallback(
+    (station, showPrice_Change, showPrice_Change_TT) => {
+      if (!station) return null;
+
+      const parts = [];
+      const hasPriceChangeData = station.price > 0 && station.kbetr_v1 > 0;
+
+      if (showPrice_Change && hasPriceChangeData) {
+        const changeColors = getPriceChangeColor(station.price_change);
+        const priceChangeDisplay =
+          station.price_change > 0
+            ? `+${station.price_change.toLocaleString()}`
+            : station.price_change.toLocaleString();
+
+        parts.push(
+          <span
+            key="priceChange"
+            style={{
+              color: changeColors.color,
+              background: changeColors.bg,
+              padding: "4px 6px",
+              borderRadius: "6px",
+            }}
+          >
+            {priceChangeDisplay}
+          </span>
+        );
+      }
+
+      const hasPriceChangeTTData =
+        station.kbetr_tt > 0 && station.kbetr_max > 0;
+      if (showPrice_Change_TT && hasPriceChangeTTData) {
+        const changeTTColors = getPriceChangeColor(station.price_change_tt);
+        const priceChangeTTDisplay =
+          station.price_change_tt > 0
+            ? `+${station.price_change_tt.toLocaleString()}`
+            : station.price_change_tt.toLocaleString();
+
+        parts.push(
+          <span
+            key="priceChangeTT"
+            style={{
+              color: changeTTColors.color,
+              background: changeTTColors.bg,
+              padding: "4px 6px",
+              borderRadius: "6px",
+            }}
+          >
+            {priceChangeTTDisplay}
+          </span>
+        );
+      }
+
+      if (parts.length === 0) return null;
+
+      return (
+        <div
+          style={{
+            marginLeft: "10px",
+            fontSize: "13px",
+            fontWeight: "500",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0px",
+          }}
+        >
+          {parts.map((part, index) => (
+            <React.Fragment key={index}>
+              {part}
+              {index < parts.length - 1 && (
+                <span style={{ color: "#000" }}>|</span>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
       );
-    }
-    
-    const hasPriceChangeTTData = station.kbetr_tt > 0 && station.kbetr_max > 0;
-    if (showPrice_Change_TT && hasPriceChangeTTData) {
-      const changeTTColors = getPriceChangeColor(station.price_change_tt);
-      const priceChangeTTDisplay = station.price_change_tt > 0 
-        ? `+${station.price_change_tt.toLocaleString()}` 
-        : station.price_change_tt.toLocaleString();
-      
-      parts.push(
-        <span key="priceChangeTT" style={{ 
-          color: changeTTColors.color,
-          background: changeTTColors.bg,
-          padding: "4px 6px",
-          borderRadius: "6px"
-        }}>
-          {priceChangeTTDisplay}
-        </span>
-      );
-    }
-    
-    if (parts.length === 0) return null;
-    
-    return (
-      <div style={{ 
-        marginLeft: "10px", 
-        fontSize: "13px", 
-        fontWeight: "500",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "0px"
-      }}>
-        {parts.map((part, index) => (
-          <React.Fragment key={index}>
-            {part}
-            {index < parts.length - 1 && (
-              <span style={{ color: "#000" }}>|</span>
-            )}
-          </React.Fragment>
-        ))}
-      </div>
-    );
-  }, [getPriceChangeColor]);
+    },
+    [getPriceChangeColor]
+  );
 
   // Preload ảnh khi có targetStation
   useEffect(() => {
@@ -850,42 +1000,67 @@ const CHXDGMap = () => {
             </button>
           </div>
 
-          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: "#1d1d1f" }}>
-            Hệ thống CHXD trên địa bàn
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              marginBottom: 10,
+              color: "#1d1d1f",
+            }}
+          >
+            {bukrsParam} - {bukrs_title || "Thông tin cửa hàng xăng dầu"}
           </div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "#1d1d1f", marginBottom: 4 }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 600,
+              color: "#1d1d1f",
+              marginBottom: 4,
+            }}
+          >
             {targetStation.title}
           </div>
-          <div style={{ fontSize: 12, marginBottom: 6, color: "#86868b", fontWeight: 400 }}>
+          <div
+            style={{
+              fontSize: 12,
+              marginBottom: 6,
+              color: "#86868b",
+              fontWeight: 400,
+            }}
+          >
             {targetStation.id}
           </div>
           <div style={{ color: "#86868b", marginBottom: 10, fontSize: 14 }}>
             📍 {targetStation.address || "Đang cập nhật"}
           </div>
-          <div style={{ 
-            background: "#f5f5f7", 
-            padding: "12px 14px", 
-            borderRadius: "12px", 
-            marginBottom: 12,
-            border: "1px solid #d2d2d7",
-            display: "flex",
-            alignItems: "center",
-            gap: "12px"
-          }}>
-            <div style={{ 
-              width: "40px", 
-              height: "40px", 
-              borderRadius: "50%", 
-              background: "#ffffff", 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center",
-              padding: "8px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
-            }}>
-              <img 
-                src={process.env.PUBLIC_URL + getFuelIcon(targetStation.matkl)} 
-                alt="fuel-icon" 
+          <div
+            style={{
+              background: "#f5f5f7",
+              padding: "12px 14px",
+              borderRadius: "12px",
+              marginBottom: 12,
+              border: "1px solid #d2d2d7",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "8px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+              }}
+            >
+              <img
+                src={process.env.PUBLIC_URL + getFuelIcon(targetStation.matkl)}
+                alt="fuel-icon"
                 style={{ width: "100%", height: "100%", objectFit: "contain" }}
                 onError={(e) => {
                   e.target.src = process.env.PUBLIC_URL + "/icons/xang92.svg";
@@ -893,19 +1068,43 @@ const CHXDGMap = () => {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "13px", color: "#86868b", textTransform: "uppercase", fontWeight: "600", letterSpacing: "0.3px", marginBottom: "4px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#86868b",
+                  textTransform: "uppercase",
+                  fontWeight: "600",
+                  letterSpacing: "0.3px",
+                  marginBottom: "4px",
+                }}
+              >
                 {targetStation.matnr_t}
               </div>
-              <div style={{ fontSize: "20px", fontWeight: "600", color: "#1d1d1f", display: "flex", alignItems: "center", lineHeight: "1.2" }}>
+              <div
+                style={{
+                  fontSize: "20px",
+                  fontWeight: "600",
+                  color: "#1d1d1f",
+                  display: "flex",
+                  alignItems: "center",
+                  lineHeight: "1.2",
+                }}
+              >
                 <span style={{ color: "#007aff", fontWeight: "600" }}>
                   {targetStation.price.toLocaleString()} đ/L
                 </span>
-                {renderPriceChangeDisplay(targetStation, showPrice_Change, showPrice_Change_TT)}
-            </div>
+                {renderPriceChangeDisplay(
+                  targetStation,
+                  showPrice_Change,
+                  showPrice_Change_TT
+                )}
+              </div>
             </div>
           </div>
           {targetStation.image && (
-            <div style={{ position: "relative", width: "100%", minHeight: 220 }}>
+            <div
+              style={{ position: "relative", width: "100%", minHeight: 220 }}
+            >
               {!imageReady && (
                 <div
                   style={{
@@ -921,7 +1120,9 @@ const CHXDGMap = () => {
                     borderRadius: 10,
                   }}
                 >
-                  <div style={{ fontSize: 14, color: "#666" }}>⏳ Đang tải ảnh...</div>
+                  <div style={{ fontSize: 14, color: "#666" }}>
+                    ⏳ Đang tải ảnh...
+                  </div>
                 </div>
               )}
               <img
@@ -948,7 +1149,7 @@ const CHXDGMap = () => {
       )}
 
       {/* Panel thống kê theo loại CHXD khi có BUKRS */}
-      { !showListPanel && (
+      {!showListPanel && (
         <button
           onClick={() => setShowListPanel(true)}
           style={{
@@ -988,8 +1189,17 @@ const CHXDGMap = () => {
             padding: "14px 16px",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Hệ thống CHXD trên địa bàn</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 6,
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700 }}>
+              {bukrsParam} - {bukrs_title || "Thông tin cửa hàng xăng dầu"}
+            </div>
             <button
               onClick={() => setShowListPanel(false)}
               style={{
@@ -1033,7 +1243,7 @@ const CHXDGMap = () => {
                     type="checkbox"
                     checked={!!categoryFilters[filterKey]}
                     onChange={() =>
-                      setCategoryFilters(prev => ({
+                      setCategoryFilters((prev) => ({
                         ...prev,
                         [filterKey]: !prev[filterKey],
                       }))
@@ -1041,38 +1251,50 @@ const CHXDGMap = () => {
                     style={{ cursor: "pointer" }}
                   />
                   {meta?.label || "Nhóm khác"}
-                  <span style={{ marginLeft: "auto", fontSize: 12, color: "#555" }}>{count} điểm</span>
+                  <span
+                    style={{ marginLeft: "auto", fontSize: 12, color: "#555" }}
+                  >
+                    {count} điểm
+                  </span>
                 </label>
 
-                {list.slice(0, expandedCategories[key] ? list.length : 4).map(item => (
-                  <div
-                    key={item.id}
-                    onClick={() => handleSelectStation(item.id)}
-                    style={{ paddingLeft: 26, color: "#444", fontSize: 13, marginTop: 4, cursor: "pointer" }}
-                  >
-                    • {item.title}
-                  </div>
-                ))}
+                {list
+                  .slice(0, expandedCategories[key] ? list.length : 4)
+                  .map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectStation(item.id)}
+                      style={{
+                        paddingLeft: 26,
+                        color: "#444",
+                        fontSize: 13,
+                        marginTop: 4,
+                        cursor: "pointer",
+                      }}
+                    >
+                      • {item.title}
+                    </div>
+                  ))}
 
                 {count > 4 && (
-                  <div 
-                    onClick={() => setExpandedCategories(prev => ({
-                      ...prev,
-                      [key]: !prev[key] // Toggle expanded state cho category này
-                    }))}
-                    style={{ 
-                      paddingLeft: 26, 
-                      marginTop: 6, 
-                      fontSize: 12, 
+                  <div
+                    onClick={() =>
+                      setExpandedCategories((prev) => ({
+                        ...prev,
+                        [key]: !prev[key], // Toggle expanded state cho category này
+                      }))
+                    }
+                    style={{
+                      paddingLeft: 26,
+                      marginTop: 6,
+                      fontSize: 12,
                       color: "#2a5599",
                       cursor: "pointer",
                       fontWeight: 500,
-                      textDecoration: "underline"
+                      textDecoration: "underline",
                     }}
                   >
-                    {expandedCategories[key] 
-                      ? "Thu gọn" 
-                      : `${count - 4} khác`}
+                    {expandedCategories[key] ? "Thu gọn" : `${count - 4} khác`}
                   </div>
                 )}
               </div>
@@ -1087,7 +1309,7 @@ const CHXDGMap = () => {
         style={{
           position: "absolute",
           bottom: 10, // Thay đổi từ top: 10
-          left: 10,   // Thay đổi từ right: 10
+          left: 10, // Thay đổi từ right: 10
           zIndex: 1001,
           width: 30,
           height: 30,
@@ -1137,7 +1359,10 @@ const CHXDGMap = () => {
           </button>
 
           {/* Công tắc đường nối */}
-          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+          <div
+            className="form-check form-switch m-0"
+            style={{ display: "flex", alignItems: "center", width: "100%" }}
+          >
             <input
               className="form-check-input"
               type="checkbox"
@@ -1149,13 +1374,22 @@ const CHXDGMap = () => {
             <label
               className="form-check-label"
               htmlFor="toggleLines"
-              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+              style={{
+                color: "#333",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+                margin: 0,
+              }}
             >
               Hiện đường nối
             </label>
           </div>
 
-          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+          <div
+            className="form-check form-switch m-0"
+            style={{ display: "flex", alignItems: "center", width: "100%" }}
+          >
             <input
               className="form-check-input"
               type="checkbox"
@@ -1167,13 +1401,22 @@ const CHXDGMap = () => {
             <label
               className="form-check-label"
               htmlFor="toggleText"
-              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+              style={{
+                color: "#333",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+                margin: 0,
+              }}
             >
               Hiện thông tin
-            </label>            
+            </label>
           </div>
 
-          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+          <div
+            className="form-check form-switch m-0"
+            style={{ display: "flex", alignItems: "center", width: "100%" }}
+          >
             <input
               className="form-check-input"
               type="checkbox"
@@ -1185,32 +1428,47 @@ const CHXDGMap = () => {
             <label
               className="form-check-label"
               htmlFor="togglePriceChange"
-              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+              style={{
+                color: "#333",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+                margin: 0,
+              }}
             >
               CL giá vùng 1
-            </label>            
+            </label>
           </div>
 
-          <div className="form-check form-switch m-0" style={{ display: "flex", alignItems: "center", width: "100%" }}>
+          <div
+            className="form-check form-switch m-0"
+            style={{ display: "flex", alignItems: "center", width: "100%" }}
+          >
             <input
               className="form-check-input"
               type="checkbox"
               id="togglePriceChangeTT"
               checked={showPrice_Change_TT}
-              onChange={() => setShowPrice_Change_TT(!showPrice_Change_TT )}
+              onChange={() => setShowPrice_Change_TT(!showPrice_Change_TT)}
               style={{ cursor: "pointer", marginRight: "8px" }}
             />
             <label
               className="form-check-label"
               htmlFor="togglePriceChangeTT"
-              style={{ color: "#333", fontWeight: 500, fontSize: 13, cursor: "pointer", margin: 0 }}
+              style={{
+                color: "#333",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+                margin: 0,
+              }}
             >
-              CL giá so với vùng
-            </label>            
+              So sánh giá TT với V1
+            </label>
           </div>
 
           {/* Dropdown chọn loại bản đồ */}
-          <div style={{ width: 160 }}>            
+          <div style={{ width: 160 }}>
             <MapTypeSelect value={mapType} onChange={handleMapTypeChange} />
           </div>
         </div>
@@ -1256,14 +1514,14 @@ const CHXDGMap = () => {
       )}
 
       {/* Bản đồ */}
-      <div 
-        id="map" 
-        style={{ 
-          height: "100vh", 
+      <div
+        id="map"
+        style={{
+          height: "100vh",
           width: "100%",
-          transform: "translateZ(0)",  // GPU acceleration
-          willChange: "transform"      // Hint cho browser
-        }} 
+          transform: "translateZ(0)", // GPU acceleration
+          willChange: "transform", // Hint cho browser
+        }}
       />
     </div>
   );
