@@ -30,6 +30,11 @@ const CHXDGMap = () => {
   const markerSizeCache = useRef(new Map());
   const fontSizeCache = useRef(new Map());
   const zoomUpdateTimeoutRef = useRef(null);
+  // Layer/dữ liệu CHXD của các đơn vị khác (toàn quốc)
+  const aroundGroupRef = useRef(null);
+  const othersGroupRef = useRef(null);
+  const othersRendererRef = useRef(null);
+  const othersFetchedRef = useRef(false);
 
   const [coords, setCoords] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,6 +58,17 @@ const CHXDGMap = () => {
   const [zoom, setZoom] = useState(6);
   const [imageReady, setImageReady] = useState(false);
 
+  // Cửa hàng xung quanh (ngoài BUKRS đang chọn) - mặc định bật
+  const [showAround, setShowAround] = useState(true);
+  const [othersCoords, setOthersCoords] = useState([]);
+  const [othersLoading, setOthersLoading] = useState(false);
+  // true sau khi view ban đầu đã được set -> mới bắt đầu tải dữ liệu xung quanh
+  const [viewInitialized, setViewInitialized] = useState(false);
+  // Khung nhìn hiện tại (cập nhật ở moveend) để lọc CHXD xung quanh
+  const [viewBox, setViewBox] = useState(null);
+  // CHXD đang chọn không thuộc BUKRS trên URL (mở từ lớp xung quanh)
+  const [targetOutOfUnit, setTargetOutOfUnit] = useState(false);
+
   const [expandedCategories, setExpandedCategories] = useState({});
 
   const [bukrs_title, setBukrs_title] = useState("");
@@ -67,6 +83,10 @@ const CHXDGMap = () => {
     NEAREST_STATIONS_COUNT: 10,
     ZOOM_DEBOUNCE_MS: 100,
     EARTH_RADIUS_KM: 6371,
+    // zoom <= giá trị này: vẽ toàn quốc dạng điểm; lớn hơn: vẽ marker đầy đủ
+    OTHERS_ZOOM_MAX: 10,
+    // giới hạn số marker "xung quanh" vẽ đầy đủ trong 1 khung nhìn
+    AROUND_MAX_MARKERS: 300,
   };
 
   // Memoized helper functions
@@ -164,6 +184,7 @@ const CHXDGMap = () => {
       item.IMAGE_URL || item.IMG_URL || item.ZIMG || item.IMG || "";
     return {
       id: item.CHXD_ID,
+      bukrs: item.BUKRS || "",
       title: item.CHXD_T || "Cửa hàng không tên",
       lat: parseFloat(item.ZLAT),
       lng: parseFloat(item.ZLONG),
@@ -243,15 +264,149 @@ const CHXDGMap = () => {
     [getPriceChangeColor]
   );
 
+  // stationBukrs: BUKRS của chính CHXD được chọn. CHXD ngoài đơn vị đang xem
+  // sẽ chuyển luôn i_bukrs sang đơn vị của nó để mở đúng ngữ cảnh đơn vị đó.
   const handleSelectStation = useCallback(
-    (id) => {
+    (id, stationBukrs) => {
       if (!id) return;
       const params = new URLSearchParams(location.search);
-      if (bukrsParam) params.set("i_bukrs", bukrsParam);
+      const nextBukrs = stationBukrs || bukrsParam;
+      if (nextBukrs) params.set("i_bukrs", nextBukrs);
       params.set("i_chxdid", id);
       window.location.search = params.toString();
     },
     [location.search, bukrsParam]
+  );
+
+  // Tạo cặp layer (marker ảnh + label giá) cho 1 CHXD.
+  // dimmed = CHXD ngoài BUKRS đang chọn -> viền nét đứt, mờ hơn để phân biệt.
+  const createStationLayers = useCallback(
+    (c, currentZoom, { dimmed = false } = {}) => {
+      const size = getMarkerSize(currentZoom);
+      const fs = getFontSize(currentZoom);
+
+      const isTarget = c.id === targetId;
+      const iconUrl = getIconUrl(c.chxd_type);
+
+      const markerIcon = L.icon({
+        iconUrl,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size],
+        popupAnchor: [0, -25],
+      });
+      const marker = L.marker([c.lat, c.lng], {
+        icon: markerIcon,
+        opacity: dimmed ? 0.85 : 1,
+        // Target luôn trên cùng, CHXD ngoài đơn vị xuống dưới CHXD của đơn vị
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : dimmed ? -500 : 0,
+      });
+
+      marker.on("click", () => {
+        handleSelectStation(c.id, c.bukrs);
+      });
+
+      marker.bindPopup(`
+          <b>${c.title}</b><br/><b>${c.id}</b>${
+        dimmed && c.bukrs
+          ? `<br/><span style="color:#8a6d00">Đơn vị ${c.bukrs}</span>`
+          : ""
+      }<br/>📍 <i>${c.address}</i>
+        `);
+      marker.on("mouseover", () => marker.openPopup());
+      marker.on("mouseout", () => marker.closePopup());
+
+      // Giá chính - Màu xanh dương Apple
+      const priceHTML = `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`;
+
+      const priceChangeHTML = createPriceChangeHTML(
+        c,
+        showPrice_Change,
+        showPrice_Change_TT
+      );
+
+      // Tính toán font-size tự động dựa trên độ dài title
+      const titleFontSize = calculateTitleFontSize(c.title.length, fs);
+
+      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: ${
+        dimmed ? "#4a4a4f" : "#1d1d1f"
+      }; font-weight: ${
+        isTarget ? "600" : "500"
+      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${
+        c.title
+      }</div>`;
+      const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}</div>`;
+
+      // Gộp labelTitleHTML và priceDivHTML thành một
+      const labelAndPriceHTML = showText
+        ? `${labelTitleHTML}${priceDivHTML}`
+        : "";
+
+      // Tạo labelHTML bằng cách kết hợp các phần dựa trên các tùy chọn
+      const labelParts = [];
+
+      if (labelAndPriceHTML.trim()) {
+        labelParts.push(labelAndPriceHTML);
+      }
+
+      if (priceChangeHTML) {
+        labelParts.push(priceChangeHTML);
+      }
+
+      // Chỉ tạo labelHTML nếu có ít nhất một phần
+      const labelHTML =
+        labelParts.length > 0
+          ? `
+          <div style="
+            background: rgba(255,255,255,${dimmed ? "0.88" : "0.98"});
+            border: 1.5px ${dimmed ? "dashed" : "solid"} ${
+              isTarget ? "#ff3b30" : dimmed ? "#a1a1a6" : "#d2d2d7"
+            };
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: ${fs}px;
+            font-weight: ${isTarget ? "600" : "400"};
+            display: inline-block;
+            white-space: nowrap;
+            margin-left: 6px;
+            text-align: left;
+            max-width: 250px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
+            transition: opacity 0.3s, box-shadow 0.2s;
+          ">
+            ${labelParts.join("")}
+          </div>
+        `
+          : "";
+
+      const labelIcon = L.divIcon({
+        html: labelHTML,
+        className: "plx-label",
+        iconSize: null,
+        iconAnchor: [-5, 15],
+      });
+      const textMarker = L.marker([c.lat, c.lng], {
+        icon: labelIcon,
+        interactive: true,
+        bubblingMouseEvents: false,
+        zIndexOffset: isTarget && chxdIdParam ? 1000 : dimmed ? -500 : 0,
+      });
+
+      return { marker, textMarker, isTarget };
+    },
+    [
+      targetId,
+      chxdIdParam,
+      showText,
+      showPrice_Change,
+      showPrice_Change_TT,
+      getIconUrl,
+      getMarkerSize,
+      getFontSize,
+      createPriceChangeHTML,
+      calculateTitleFontSize,
+      handleSelectStation,
+    ]
   );
 
   const handleMapTypeChange = useCallback((type) => {
@@ -285,6 +440,7 @@ const CHXDGMap = () => {
     if (!bukrsParam) {
       setCoords([]);
       setLoading(false);
+      setViewInitialized(true);
       return;
     }
 
@@ -332,41 +488,52 @@ const CHXDGMap = () => {
       // Nếu có chxdIdParam, lấy thêm dữ liệu chi tiết cho CHXD đó
       if (chxdIdParam) {
         try {
-          const detailRes = await fetch(`${BASE_URL}${API}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Basic ${token}`,
-            },
-            body: JSON.stringify({
-              FUNC: "ZFM_CHXD_GMAP",
-              DATA: {
-                I_BUKRS: bukrsParam,
-                I_CHXD_ID: chxdIdParam,
-                I_MATNR: matnrParam,
+          const fetchDetail = (withBukrs) =>
+            fetch(`${BASE_URL}${API}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${token}`,
               },
-            }),
-          });
+              body: JSON.stringify({
+                FUNC: "ZFM_CHXD_GMAP",
+                DATA: {
+                  ...(withBukrs ? { I_BUKRS: bukrsParam } : {}),
+                  I_CHXD_ID: chxdIdParam,
+                  I_MATNR: matnrParam,
+                },
+              }),
+            });
 
-          if (detailRes.ok) {
-            const detailData = await detailRes.json();
-            const tData = detailData?.RESPONSE?.T_DATA;
+          let detailRes = await fetchDetail(true);
+          let tData = detailRes.ok
+            ? (await detailRes.json())?.RESPONSE?.T_DATA
+            : null;
 
-            if (tData && tData.length > 0) {
-              const detailInfo = transformStationData(tData[0]);
+          // CHXD ngoài BUKRS đang chọn: gọi lại không truyền I_BUKRS
+          // (ZFM_CHXD_GMAP trả 0 dòng nếu CHXD không thuộc BUKRS đó)
+          let outOfUnit = false;
+          if (!tData || tData.length === 0) {
+            detailRes = await fetchDetail(false);
+            if (detailRes.ok) {
+              tData = (await detailRes.json())?.RESPONSE?.T_DATA;
+              outOfUnit = !!(tData && tData.length > 0);
+            }
+          }
+          setTargetOutOfUnit(outOfUnit);
 
-              // Kiểm tra xem CHXD đã có trong list chưa
-              const existingIndex = list.findIndex(
-                (x) => x.id === detailInfo.id
-              );
-              if (existingIndex >= 0) {
-                // Cập nhật thông tin chi tiết (đặc biệt là image base64) nếu đã có
-                list[existingIndex] = { ...list[existingIndex], ...detailInfo };
-              } else {
-                // Thêm vào list nếu chưa có (trường hợp CHXD không thuộc BUKRS này)
-                if (!isNaN(detailInfo.lat) && !isNaN(detailInfo.lng)) {
-                  list.push(detailInfo);
-                }
+          if (tData && tData.length > 0) {
+            const detailInfo = transformStationData(tData[0]);
+
+            // Kiểm tra xem CHXD đã có trong list chưa
+            const existingIndex = list.findIndex((x) => x.id === detailInfo.id);
+            if (existingIndex >= 0) {
+              // Cập nhật thông tin chi tiết (đặc biệt là image base64) nếu đã có
+              list[existingIndex] = { ...list[existingIndex], ...detailInfo };
+            } else {
+              // Thêm vào list nếu chưa có (CHXD không thuộc BUKRS đang chọn)
+              if (!isNaN(detailInfo.lat) && !isNaN(detailInfo.lng)) {
+                list.push(detailInfo);
               }
             }
           }
@@ -376,6 +543,8 @@ const CHXDGMap = () => {
       }
 
       setCoords(list);
+      // Không có điểm nào -> marker effect sẽ bỏ qua, tự mở cổng cho lớp đơn vị khác
+      if (list.length === 0) setViewInitialized(true);
     } catch (err) {
       console.error(err);
       setError("Không thể kết nối tới API hoặc dữ liệu lỗi.");
@@ -387,6 +556,64 @@ const CHXDGMap = () => {
   useEffect(() => {
     fetchCHXDList();
   }, [fetchCHXDList]);
+
+  // Tải CHXD toàn quốc (I_BUKRS rỗng = tất cả đơn vị). Payload lớn (~8MB)
+  // nên chỉ tải 1 lần, lúc người dùng zoom nhỏ lần đầu.
+  const fetchOtherUnits = useCallback(async () => {
+    if (othersFetchedRef.current) return;
+    othersFetchedRef.current = true;
+
+    try {
+      setOthersLoading(true);
+      const token = btoa(`${API_USER}:${API_PASSWORD}`);
+
+      const res = await fetch(`${BASE_URL}${API}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Basic ${token}`,
+        },
+        body: JSON.stringify({
+          FUNC: "ZFM_CHXD_GMAP",
+          DATA: { I_BUKRS: "", I_MATNR: matnrParam },
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+      const data = await res.json();
+      const rows = data?.RESPONSE?.T_DATA || [];
+
+      // Bỏ điểm không có toạ độ, gộp trùng CHXD_ID (ưu tiên dòng có giá)
+      const byId = new Map();
+      rows.forEach((item) => {
+        const lat = parseFloat(item.ZLAT);
+        const lng = parseFloat(item.ZLONG);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        const prev = byId.get(item.CHXD_ID);
+        if (!prev || (!(prev.price > 0) && item.PRICE > 0)) {
+          byId.set(item.CHXD_ID, transformStationData(item));
+        }
+      });
+
+      setOthersCoords(Array.from(byId.values()));
+    } catch (err) {
+      othersFetchedRef.current = false; // cho phép thử lại
+      console.error("Error fetching other units:", err);
+    } finally {
+      setOthersLoading(false);
+    }
+  }, [matnrParam, transformStationData]);
+
+  useEffect(() => {
+    if (!viewInitialized) return;
+    if (showAround) fetchOtherUnits();
+  }, [viewInitialized, showAround, fetchOtherUnits]);
+
+  // Mở 1 CHXD ngoài BUKRS -> tự bật lớp xung quanh, nếu không map sẽ trống trơn
+  useEffect(() => {
+    if (targetOutOfUnit) setShowAround(true);
+  }, [targetOutOfUnit]);
 
   useEffect(() => {
     showTextRef.current = showText;
@@ -441,14 +668,35 @@ const CHXDGMap = () => {
         });
       };
 
+      // Cập nhật khung nhìn để lọc CHXD xung quanh (moveend chạy cả khi zoom)
+      const handleMoveEnd = () => {
+        if (!mapRef.current) return;
+        const b = mapRef.current.getBounds();
+        const c = mapRef.current.getCenter();
+        setViewBox({
+          s: b.getSouth(),
+          w: b.getWest(),
+          n: b.getNorth(),
+          e: b.getEast(),
+          clat: c.lat,
+          clng: c.lng,
+        });
+      };
+
       mapRef.current.on("zoomend", handleZoomEnd);
+      mapRef.current.on("moveend", handleMoveEnd);
+      handleMoveEnd();
       setMapLoaded(true);
 
       return () => {
         if (mapRef.current) {
           mapRef.current.off("zoomend", handleZoomEnd);
+          mapRef.current.off("moveend", handleMoveEnd);
           mapRef.current.remove();
           mapRef.current = null;
+          aroundGroupRef.current = null;
+          othersGroupRef.current = null;
+          othersRendererRef.current = null;
         }
       };
     }
@@ -592,6 +840,56 @@ const CHXDGMap = () => {
     [coords, categoryFilters, resolveType]
   );
 
+  const ownIds = useMemo(() => new Set(coords.map((c) => c.id)), [coords]);
+
+  // CHXD đơn vị khác: bỏ CHXD của BUKRS đang chọn, áp dụng filter nhóm
+  const othersVisible = useMemo(
+    () =>
+      othersCoords.filter(
+        (c) =>
+          c.bukrs !== bukrsParam &&
+          !ownIds.has(c.id) &&
+          categoryFilters[resolveType(c)] !== false
+      ),
+    [othersCoords, ownIds, bukrsParam, categoryFilters, resolveType]
+  );
+
+  // Zoom nhỏ -> vẽ toàn quốc dạng điểm; zoom lớn -> vẽ marker đầy đủ
+  const othersActive = showAround && zoom <= CONSTANTS.OTHERS_ZOOM_MAX;
+  const aroundActive = showAround && zoom > CONSTANTS.OTHERS_ZOOM_MAX;
+
+  // Bán kính điểm theo zoom - chia bậc để không phải vẽ lại liên tục
+  const othersRadius = useMemo(() => (zoom >= 10 ? 5 : zoom >= 8 ? 4 : 3), [
+    zoom,
+  ]);
+
+  // CHXD xung quanh trong khung nhìn, ưu tiên gần tâm bản đồ nhất
+  const aroundVisible = useMemo(() => {
+    if (!aroundActive || !viewBox || othersVisible.length === 0) return [];
+
+    const inBox = othersVisible.filter(
+      (c) =>
+        c.lat >= viewBox.s &&
+        c.lat <= viewBox.n &&
+        c.lng >= viewBox.w &&
+        c.lng <= viewBox.e
+    );
+    if (inBox.length <= CONSTANTS.AROUND_MAX_MARKERS) return inBox;
+
+    // Xếp theo khoảng cách tới tâm (bình phương độ, đủ để xếp hạng)
+    return inBox
+      .map((c) => ({
+        c,
+        d:
+          (c.lat - viewBox.clat) ** 2 +
+          ((c.lng - viewBox.clng) * Math.cos((viewBox.clat * Math.PI) / 180)) **
+            2,
+      }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, CONSTANTS.AROUND_MAX_MARKERS)
+      .map((x) => x.c);
+  }, [aroundActive, viewBox, othersVisible]);
+
   // Auto filter PLX when showPrice_Change_TT is selected
   useEffect(() => {
     if (showPrice_Change_TT && !showPrice_Change && !showText) {
@@ -620,8 +918,6 @@ const CHXDGMap = () => {
     const markerGroup = markerGroupRef.current;
     markerGroup.clearLayers();
 
-    const hideMarkerTooltip = false;
-
     // Lấy zoom hiện tại từ map để đảm bảo chính xác
     const currentZoom = map.getZoom() || zoom;
 
@@ -630,107 +926,10 @@ const CHXDGMap = () => {
     let targetTextMarker = null;
 
     visibleCoords.forEach((c) => {
-      const size = getMarkerSize(currentZoom);
-      const fs = getFontSize(currentZoom);
-
-      const isTarget = c.id === targetId;
-      const iconUrl = getIconUrl(c.chxd_type);
-
-      const markerIcon = L.icon({
-        iconUrl,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size],
-        popupAnchor: [0, -25],
-      });
-      const marker = L.marker([c.lat, c.lng], {
-        icon: markerIcon,
-        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0, // Target marker luôn ở trên khi có chxdIdParam
-      });
-
-      marker.on("click", () => {
-        handleSelectStation(c.id);
-      });
-
-      if (!hideMarkerTooltip) {
-        marker.bindPopup(`
-          <b>${c.title}</b><br/><b>${c.id}</b><br/>📍 <i>${c.address}</i>
-        `);
-        marker.on("mouseover", () => marker.openPopup());
-        marker.on("mouseout", () => marker.closePopup());
-      }
-
-      // Giá chính - Màu xanh dương Apple
-      const priceHTML = `<span class="price-value" style="color:#007aff;font-weight:600;">${c.price.toLocaleString()} đ/L</span>`;
-
-      const priceChangeHTML = createPriceChangeHTML(
+      const { marker, textMarker, isTarget } = createStationLayers(
         c,
-        showPrice_Change,
-        showPrice_Change_TT
+        currentZoom
       );
-
-      // Tính toán font-size tự động dựa trên độ dài title
-      const titleFontSize = calculateTitleFontSize(c.title.length, fs);
-
-      const labelTitleHTML = `<div style="font-size: ${titleFontSize}px; color: #1d1d1f; font-weight: ${
-        isTarget ? "600" : "500"
-      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; line-height: 1.3;">${
-        c.title
-      }</div>`;
-      const priceDivHTML = `<div class="price-container" style="margin-top: 2px; display: flex; align-items: center;">${priceHTML}</div>`;
-
-      // Gộp labelTitleHTML và priceDivHTML thành một
-      const labelAndPriceHTML = showText
-        ? `${labelTitleHTML}${priceDivHTML}`
-        : "";
-
-      // Tạo labelHTML bằng cách kết hợp các phần dựa trên các tùy chọn
-      const labelParts = [];
-
-      if (labelAndPriceHTML.trim()) {
-        labelParts.push(labelAndPriceHTML);
-      }
-
-      if (priceChangeHTML) {
-        labelParts.push(priceChangeHTML);
-      }
-
-      // Chỉ tạo labelHTML nếu có ít nhất một phần
-      const labelHTML =
-        labelParts.length > 0
-          ? `
-          <div style="
-            background: rgba(255,255,255,0.98);
-            border: 1.5px solid ${isTarget ? "#ff3b30" : "#d2d2d7"};
-            border-radius: 8px;
-            padding: 4px 8px;
-            font-size: ${fs}px;
-            font-weight: ${isTarget ? "600" : "400"};
-            display: inline-block;
-            white-space: nowrap;
-            margin-left: 6px;
-            text-align: left;
-            max-width: 250px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            ${isTarget ? "animation: pulseLabel 1.2s infinite" : ""};
-            transition: opacity 0.3s, box-shadow 0.2s;
-          ">
-            ${labelParts.join("")}
-          </div>
-        `
-          : "";
-
-      const labelIcon = L.divIcon({
-        html: labelHTML,
-        className: "plx-label",
-        iconSize: null,
-        iconAnchor: [-5, 15],
-      });
-      const textMarker = L.marker([c.lat, c.lng], {
-        icon: labelIcon,
-        interactive: true,
-        bubblingMouseEvents: false,
-        zIndexOffset: isTarget && chxdIdParam ? 1000 : 0, // Target label luôn ở trên
-      });
 
       // Nếu là target marker, lưu lại để thêm vào sau cùng
       if (isTarget && chxdIdParam) {
@@ -771,6 +970,7 @@ const CHXDGMap = () => {
       }
 
       initialViewSet.current = true;
+      setViewInitialized(true);
     }
   }, [
     visibleCoords,
@@ -781,12 +981,118 @@ const CHXDGMap = () => {
     showPrice_Change_TT,
     zoom,
     chxdIdParam,
-    getIconUrl,
-    createPriceChangeHTML,
-    getMarkerSize,
-    getFontSize,
+    createStationLayers,
+  ]);
+
+  // 3b. CHXD xung quanh (ngoài BUKRS) - marker + label đầy đủ khi zoom lớn
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+
+    if (!aroundGroupRef.current) {
+      aroundGroupRef.current = L.featureGroup();
+    }
+    const group = aroundGroupRef.current;
+    group.clearLayers();
+
+    if (!aroundActive || aroundVisible.length === 0) {
+      if (map.hasLayer(group)) map.removeLayer(group);
+      return;
+    }
+
+    const currentZoom = map.getZoom() || zoom;
+
+    aroundVisible.forEach((c) => {
+      const { marker, textMarker } = createStationLayers(c, currentZoom, {
+        dimmed: true,
+      });
+      group.addLayer(marker);
+      if (showText || showPrice_Change || showPrice_Change_TT) {
+        group.addLayer(textMarker);
+      }
+    });
+
+    if (!map.hasLayer(group)) group.addTo(map);
+  }, [
+    aroundActive,
+    aroundVisible,
+    zoom,
+    mapLoaded,
+    showText,
+    showPrice_Change,
+    showPrice_Change_TT,
+    createStationLayers,
+  ]);
+
+  // 3c. CHXD các đơn vị khác - vẽ dạng điểm trên canvas khi zoom nhỏ
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+
+    if (!othersRendererRef.current) {
+      othersRendererRef.current = L.canvas({ padding: 0.5 });
+    }
+    if (!othersGroupRef.current) {
+      othersGroupRef.current = L.layerGroup();
+    }
+    const group = othersGroupRef.current;
+
+    if (!othersActive) {
+      group.clearLayers();
+      if (map.hasLayer(group)) map.removeLayer(group);
+      return;
+    }
+
+    group.clearLayers();
+
+    othersVisible.forEach((c) => {
+      const type = resolveType(c);
+      const color = typeMeta[type]?.color || "#6c757d";
+
+      const dot = L.circleMarker([c.lat, c.lng], {
+        renderer: othersRendererRef.current,
+        radius: othersRadius,
+        color: "#ffffff",
+        weight: 1,
+        opacity: 0.9,
+        fillColor: color,
+        fillOpacity: 0.85,
+      });
+
+      // Click điểm -> điều hướng y như click marker của đơn vị đang chọn
+      dot.on("click", () => {
+        handleSelectStation(c.id, c.bukrs);
+      });
+
+      // Tooltip tạo lazy lúc hover: tránh dựng sẵn hàng nghìn tooltip
+      dot.on("mouseover", () => {
+        if (!dot.getTooltip()) {
+          dot.bindTooltip(
+            `<b>${c.title}</b><br/><span style="color:${color};font-weight:600">${
+              typeMeta[type]?.label || type
+            }</span>${c.bukrs ? ` • Đơn vị ${c.bukrs}` : ""}${
+              c.price > 0
+                ? `<br/><b style="color:#007aff">${c.price.toLocaleString()} đ/L</b>`
+                : ""
+            }`,
+            { direction: "top", opacity: 0.95 }
+          );
+        }
+        dot.openTooltip();
+      });
+
+      group.addLayer(dot);
+    });
+
+    if (!map.hasLayer(group)) group.addTo(map);
+  }, [
+    othersActive,
+    othersVisible,
+    othersRadius,
+    mapLoaded,
+    resolveType,
+    typeMeta,
     handleSelectStation,
-    calculateTitleFontSize,
   ]);
 
   // Calculate distance between two points
@@ -815,13 +1121,15 @@ const CHXDGMap = () => {
 
   // Polyline toggle
   useEffect(() => {
-    if (!mapRef.current || nearestStations.length === 0) return;
+    if (!mapRef.current || !lineGroupRef.current) return;
     const map = mapRef.current;
     const lineGroup = lineGroupRef.current;
-    const target = coords.find((x) => x.id === targetId);
-    if (!target) return;
 
+    // Xoá trước khi kiểm tra điều kiện, nếu không tắt toggle sẽ không xoá được
     lineGroup.clearLayers();
+
+    const target = coords.find((x) => x.id === targetId);
+    if (!showLines || !target || nearestStations.length === 0) return;
 
     nearestStations.forEach((p) => {
       const dist = p.distance.toFixed(2);
@@ -840,8 +1148,8 @@ const CHXDGMap = () => {
       lineGroup.addLayer(line);
     });
 
-    lineGroup.addTo(map);
-  }, [nearestStations, coords, targetId, getDistance]);
+    if (!map.hasLayer(lineGroup)) lineGroup.addTo(map);
+  }, [showLines, nearestStations, coords, targetId]);
 
   const targetStation = useMemo(
     () => visibleCoords.find((c) => c.id === targetId),
@@ -1016,9 +1324,28 @@ const CHXDGMap = () => {
               fontWeight: 600,
               color: "#1d1d1f",
               marginBottom: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
             }}
           >
             {targetStation.title}
+            {targetOutOfUnit && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "#8a6d00",
+                  background: "#fff4cc",
+                  border: "1px solid #ffe08a",
+                  borderRadius: 6,
+                  padding: "2px 6px",
+                }}
+              >
+                Ngoài đơn vị {bukrsParam}
+              </span>
+            )}
           </div>
           <div
             style={{
@@ -1466,6 +1793,48 @@ const CHXDGMap = () => {
               So sánh giá TT với V1
             </label>
           </div>
+
+          {/* Hiện CHXD ngoài BUKRS đang chọn */}
+          <div
+            className="form-check form-switch m-0"
+            style={{ display: "flex", alignItems: "center", width: "100%" }}
+          >
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="toggleAround"
+              checked={showAround}
+              onChange={() => setShowAround(!showAround)}
+              style={{ cursor: "pointer", marginRight: "8px" }}
+            />
+            <label
+              className="form-check-label"
+              htmlFor="toggleAround"
+              style={{
+                color: "#333",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+                margin: 0,
+              }}
+            >
+              Hiện cửa hàng xung quanh
+              {othersLoading ? " (đang tải...)" : ""}
+            </label>
+          </div>
+          {showAround && (
+            <div style={{ fontSize: 11, color: "#86868b", marginTop: -4 }}>
+              {othersLoading
+                ? "Đang tải dữ liệu toàn quốc..."
+                : aroundActive
+                ? `Ngoài đơn vị: ${aroundVisible.length}${
+                    aroundVisible.length >= CONSTANTS.AROUND_MAX_MARKERS
+                      ? ` (giới hạn ${CONSTANTS.AROUND_MAX_MARKERS} gần tâm nhất)`
+                      : ""
+                  } trong khung nhìn`
+                : `Toàn quốc dạng điểm: ${othersVisible.length} • zoom > ${CONSTANTS.OTHERS_ZOOM_MAX} để xem chi tiết`}
+            </div>
+          )}
 
           {/* Dropdown chọn loại bản đồ */}
           <div style={{ width: 160 }}>

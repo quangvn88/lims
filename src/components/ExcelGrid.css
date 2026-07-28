@@ -1,0 +1,94 @@
+/* Lưới xem Excel (HTML table). Class đặt tiền tố "xl" để không đụng bootstrap/antd.
+   Port từ D:\DATA\NodeJS\Excel\client\src\styles.css (phần lưới). */
+.xlgrid {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: Calibri, Arial, sans-serif;
+  background: #fff;
+}
+
+.xltabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 8px 0;
+  background: #f5f6f8;
+  border-bottom: 1px solid #ddd;
+}
+.xltab {
+  padding: 5px 12px;
+  background: #e9edf2;
+  border: 1px solid #d9d9d9;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.xltab.active {
+  background: #fff;
+  color: #0d4a86;
+  font-weight: 600;
+}
+
+.xlscroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+table.xl {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+table.xl th,
+table.xl td {
+  border: 1px solid #dcdee1;
+  font-size: 14px;
+  padding: 1px 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: middle;
+  height: 20px;
+  user-select: none;
+}
+.xlcolhdr,
+.xlrowhdr,
+.xlcorner {
+  background: #f3f4f6;
+  color: #555;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  position: sticky;
+}
+.xlcolhdr {
+  top: 0;
+  z-index: 2;
+}
+.xlrowhdr {
+  left: 0;
+  z-index: 2;
+}
+.xlcorner {
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+table.xl td.sel {
+  box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.22);
+}
+.xlcolhdr.hl,
+.xlrowhdr.hl {
+  background: #cfe2ff;
+  color: #0d4a86;
+}
+
+.xlsbar {
+  height: 26px;
+  line-height: 26px;
+  background: #0d4a86;
+  color: #fff;
+  font-size: 12px;
+  padding: 0 12px;
+  flex: none;
+}
