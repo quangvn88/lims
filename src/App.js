@@ -14,6 +14,8 @@ import CHXDGMap from "./components/CHXDGMap";
 import CHXDLocation from "./components/CHXDLocation";
 import ViewFile from "./components/ViewFile";
 import ViewFileDHN from "./components/ViewFileDHN";
+import ViewFileThuLao from "./components/ViewFileThuLao";
+import ViewFileBI from "./components/ViewFileBI";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -87,6 +89,8 @@ function App() {
         <Route path="/chxd-location/:CHXD_ID" element={<CHXDLocation />} />
         <Route path="/view-file" element={<ViewFile />} />
         <Route path="/view-file-dhn" element={<ViewFileDHN />} />
+        <Route path="/view-file-thulao" element={<ViewFileThuLao />} />
+        <Route path="/view-file-bi" element={<ViewFileBI />} />
       </Routes>
     </Router>
   );

@@ -15,6 +15,8 @@
   padding: 8px 8px 0;
   background: #f5f6f8;
   border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+  flex: none;
 }
 .xltab {
   padding: 5px 12px;
@@ -24,6 +26,7 @@
   border-radius: 6px 6px 0 0;
   cursor: pointer;
   font-size: 13px;
+  white-space: nowrap;
 }
 .xltab.active {
   background: #fff;
@@ -36,12 +39,37 @@
   overflow: auto;
   min-height: 0;
 }
+/* Bọc bảng để ảnh/biểu đồ định vị tuyệt đối theo đúng gốc toạ độ của bảng.
+   Dùng CSS `zoom` (không phải transform) vì transform làm position:sticky mất tác dụng. */
+.xlwrap {
+  position: relative;
+  width: max-content;
+}
+/* KHÔNG dùng `border-collapse: collapse`.
+   Chrome vẽ viền của bảng collapse ở tầng BẢNG chứ không thuộc từng ô, nên ô
+   `position:sticky` (freeze pane) không được tính lại vùng cần vẽ khi cuộn ->
+   pixel cũ của các dòng đang cuộn đọng lại trong vùng đóng băng ("bóng ma" chữ
+   đỏ/xám ở dòng 1-5). Đã đo trên /app/view-file-dhn ngày 06/08/2026:
+     collapse                     -> có bóng ma
+     collapse + offset làm tròn   -> VẪN có bóng ma (loại trừ nguyên nhân subpixel)
+     separate + border-spacing 0  -> hết hẳn
+   Kèm theo, collapse còn cho headH=24 nhưng rowTop[0]=24,5 (nửa pixel viền chung)
+   -> hở 0,5px dưới tiêu đề cột; separate cho cả hai đều = 24. */
 table.xl {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
+  /* Ô chỉ còn vẽ cạnh trên + trái (xem quy tắc dưới) nên cạnh ngoài cùng bên
+     phải và dưới của cả bảng phải bù ở đây. */
+  border-right: 1px solid #dcdee1;
+  border-bottom: 1px solid #dcdee1;
 }
 table.xl th,
 table.xl td {
+  /* border-box để bề rộng cột trong <colgroup> vẫn là bề rộng ĐÃ GỒM viền,
+     giống hệt lúc collapse -> bảng không rộng thêm ra (đo được: 2543,5px ở cả
+     hai chế độ). */
+  box-sizing: border-box;
   border: 1px solid #dcdee1;
   font-size: 14px;
   padding: 1px 5px;
@@ -50,6 +78,21 @@ table.xl td {
   vertical-align: middle;
   height: 20px;
   user-select: none;
+  /* KHÔNG dùng background-clip:padding-box: ô ghim (freeze pane) sẽ không tô nền
+     ở vùng 1px viền, làm nội dung đang cuộn lộ qua các đường kẻ. */
+  background-clip: border-box;
+}
+/* Với `separate`, hai ô kề nhau vẽ hai nét riêng -> đường kẻ trong bảng dày 2px.
+   `excelModel` cố tình khai MỖI CẠNH CHUNG CHO CẢ HAI ô kề nó (xem "bảng cạnh /
+   edge map"), nên bỏ hẳn cạnh phải + dưới của mọi ô vẫn còn đủ đúng 1 nét, đúng
+   màu, đúng độ dày — không mất nét nào. Phải dùng !important vì viền của Excel
+   do excelModel "nướng" vào style inline của từng ô.
+   Hệ quả duy nhất: cạnh phải/dưới NGOÀI CÙNG của vùng dữ liệu do chính ô biên
+   khai (không có ô kề để gánh) sẽ mất -> đã bù bằng border của `table.xl`. */
+table.xl th,
+table.xl td {
+  border-right: 0 !important;
+  border-bottom: 0 !important;
 }
 .xlcolhdr,
 .xlrowhdr,
@@ -63,16 +106,16 @@ table.xl td {
 }
 .xlcolhdr {
   top: 0;
-  z-index: 2;
+  z-index: 6;
 }
 .xlrowhdr {
   left: 0;
-  z-index: 2;
+  z-index: 4;
 }
 .xlcorner {
   top: 0;
   left: 0;
-  z-index: 3;
+  z-index: 8;
 }
 table.xl td.sel {
   box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.22);
@@ -83,12 +126,105 @@ table.xl td.sel {
   color: #0d4a86;
 }
 
+/* Header của dòng/cột vốn bị ẩn trong file gốc, khi bật "Hiện dòng/cột ẩn" */
+.xlcolhdr.xlhiddencol,
+.xlrowhdr.xlhiddenrow {
+  background: #ffe8b3;
+  color: #8a5a00;
+  font-style: italic;
+}
+
+/* --- Lớp phủ: ảnh nhúng + biểu đồ ---------------------------------------- */
+/* pointer-events:none để vẫn chọn được ô bên dưới; riêng chart bật lại để có tooltip. */
+.xloverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.xlimg {
+  position: absolute;
+  object-fit: contain;
+}
+.xlchartbox {
+  position: absolute;
+  pointer-events: auto;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.xlchart {
+  width: 100%;
+  height: 100%;
+}
+.xlchart-failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 13px;
+}
+
+/* --- Thanh trạng thái ----------------------------------------------------- */
 .xlsbar {
-  height: 26px;
-  line-height: 26px;
+  min-height: 26px;
   background: #0d4a86;
   color: #fff;
   font-size: 12px;
   padding: 0 12px;
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.xladdr {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xltools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+}
+.xlhiddentoggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+  white-space: nowrap;
+}
+.xlhiddentoggle input {
+  cursor: pointer;
+  margin: 0;
+}
+.xlzoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.xlzoom button {
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.xlzoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.xlzoomval {
+  min-width: 38px;
+  text-align: center;
 }
