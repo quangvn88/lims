@@ -1,0 +1,317 @@
+/* Panel nổi trên bản đồ CHXD (CHXDGMap.js).
+   Tách ra CSS để dùng được media query - inline style không làm được. */
+
+/* ---- Panel chung (danh sách nhóm + thông tin CHXD) ---- */
+.gmap-panel {
+  /* Màu chữ chung cho panel: một màu duy nhất, tương phản ~13:1 trên nền
+     trắng (#86868b cũ chỉ ~3.5:1, chữ nhỏ đọc mờ). Phân cấp thông tin dựa
+     vào cỡ chữ và độ đậm, không dựa vào màu. */
+  --gmap-text: #2c2c2e;
+  position: absolute;
+  z-index: 1002;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Danh sách nhóm CHXD - góc trái trên */
+.gmap-list-panel {
+  top: 8px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100vh - 16px);
+}
+
+/* Thông tin CHXD đang chọn - góc phải trên */
+.gmap-info-panel {
+  top: 8px;
+  right: 8px;
+  width: 310px;
+  max-height: calc(100vh - 16px);
+}
+
+.gmap-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--gmap-text);
+}
+
+/* Tổng số CHXD, nằm sát tiêu đề panel danh sách */
+.gmap-panel-count {
+  margin-right: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gmap-text);
+  background: #f1f3f5;
+  border: 1px solid #e3e6e8;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.gmap-panel-close {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  color: #555;
+  cursor: pointer;
+}
+
+.gmap-panel-close:hover {
+  color: #000;
+}
+
+/* ---- Nút "Chọn tất cả" / "Bỏ chọn tất cả" ---- */
+.gmap-bulk-btn {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  background: #fff;
+  color: #2a5599;
+  cursor: pointer;
+}
+
+.gmap-bulk-btn:disabled {
+  background: #f1f3f5;
+  color: #adb5bd;
+  cursor: default;
+}
+
+/* ---- Danh sách nhóm ---- */
+.gmap-cat-label {
+  font-size: 12.5px;
+}
+
+.gmap-cat-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.gmap-cat-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #555;
+  white-space: nowrap;
+}
+
+.gmap-cat-item {
+  padding-left: 22px;
+  color: #444;
+  font-size: 12px;
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.gmap-cat-more {
+  padding-left: 22px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #2a5599;
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- Bộ điều khiển - góc phải dưới ---- */
+.gmap-controls-panel {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 1000;
+  width: 210px;
+  gap: 5px;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gmap-toggle-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.gmap-toggle-row .form-check-input {
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.gmap-toggle-label {
+  margin: 0;
+  color: #333;
+  font-weight: 500;
+  font-size: 11.5px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.gmap-controls-note {
+  font-size: 10px;
+  color: #86868b;
+  margin-top: -3px;
+}
+
+/* ---- Xem ảnh CHXD cỡ lớn ----
+   position: absolute vì root .gmap-root là position: relative, lightbox chỉ
+   phủ vùng bản đồ chứ không phủ ra ngoài layout của app. */
+.gmap-lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  cursor: zoom-out;
+}
+
+.gmap-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
+.gmap-lightbox-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #222;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gmap-lightbox-close:hover {
+  background: #fff;
+}
+
+/* ---- Nút tròn mở lại panel đã đóng ---- */
+.gmap-fab {
+  position: absolute;
+  z-index: 1003;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: #2a5599;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  align-items: center;
+  justify-content: center;
+}
+
+.gmap-fab-info {
+  top: 8px;
+  right: 8px;
+}
+
+.gmap-fab-list {
+  top: 8px;
+  left: 40px;
+}
+
+.gmap-fab-controls {
+  bottom: 8px;
+  left: 8px;
+  border-radius: 50%;
+  z-index: 1001;
+}
+
+/* ---- Màn hình vừa ---- */
+@media (max-width: 1200px) {
+  .gmap-list-panel {
+    width: 265px;
+  }
+  .gmap-info-panel {
+    width: 275px;
+  }
+}
+
+@media (max-width: 900px) {
+  .gmap-list-panel {
+    width: 235px;
+  }
+  .gmap-info-panel {
+    width: 245px;
+  }
+  .gmap-controls-panel {
+    width: 190px;
+  }
+}
+
+/* ---- Màn hình hẹp: panel trải ngang, xếp trên/dưới ----
+   Ở kích thước này panel danh sách và bộ điều khiển được mở lần lượt
+   (xem isNarrow trong CHXDGMap.js) nên không đè lên nhau. */
+@media (max-width: 680px) {
+  .gmap-list-panel,
+  .gmap-info-panel,
+  .gmap-controls-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+  .gmap-info-panel {
+    top: 8px;
+    max-height: 42vh;
+  }
+  /* Chừa dải 36px dưới cùng cho 2 nút hamburger, panel không đè lên chúng */
+  .gmap-list-panel {
+    top: auto;
+    bottom: 44px;
+    max-height: 42vh;
+  }
+  .gmap-controls-panel {
+    bottom: 44px;
+    max-height: 42vh;
+    z-index: 1004;
+  }
+  /* 2 nút mở panel nằm cạnh nhau ở dải dưới cùng, luôn bấm được */
+  .gmap-fab-list,
+  .gmap-fab-controls {
+    top: auto;
+    bottom: 8px;
+    z-index: 1005;
+  }
+  .gmap-fab-list {
+    left: 8px;
+  }
+  .gmap-fab-controls {
+    left: 44px;
+  }
+  /* Panel thông tin chiếm phần trên -> đẩy nút zoom của Leaflet xuống dưới nó */
+  .gmap-root.gmap-info-open .leaflet-top.leaflet-left {
+    top: 44vh;
+  }
+}

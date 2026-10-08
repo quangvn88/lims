@@ -1,4 +1,11 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ExcelChart from "./ExcelChart.jsx";
 import "./ExcelGrid.css";
 
@@ -42,19 +49,41 @@ function colName(i) {
   return s;
 }
 
-const ZOOMS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+// Các mức của nút − / +. Chụm hai ngón thì zoom LIÊN TỤC nên chỉ bị chặn bởi
+// ZOOM_MIN/ZOOM_MAX, không bám theo danh sách này.
+const ZOOMS = [
+  0.25, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3,
+];
+const ZOOM_MIN = ZOOMS[0];
+const ZOOM_MAX = ZOOMS[ZOOMS.length - 1];
+const clampZoom = (z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 const ROW_HDR_W = 46;
 
 export default function ExcelGrid({ model }) {
   const [si, setSi] = useState(0);
   const [sel, setSel] = useState(null); // {r1,c1,r2,c2} - toạ độ 1-based (theo Excel)
   const [showHidden, setShowHidden] = useState(false);
-  const [zoomIdx, setZoomIdx] = useState(ZOOMS.indexOf(1));
+  const [zoom, setZoom] = useState(1);
   const [geom, setGeom] = useState(null); // { colLeft[], rowTop[], rowH[], headH }
+  // "auto" = tự bỏ ghim khi chỗ còn lại quá chật (xem col/rowFreezeActive).
+  const [colFreezeMode, setColFreezeMode] = useState("auto"); // auto | on | off
+  const [rowFreezeMode, setRowFreezeMode] = useState("auto");
+  const [resizeTick, setResizeTick] = useState(0);
   const selecting = useRef(false);
+  const lastPtr = useRef("mouse"); // loại con trỏ của thao tác gần nhất
   const tableRef = useRef(null);
   const scrollRef = useRef(null);
   const wrapRef = useRef(null);
+  // Zoom hiện tại dưới dạng ref: listener pinch gắn 1 lần nên không đọc được
+  // state qua closure.
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
+  const pinching = useRef(false); // đang chụm hai ngón -> hoãn đo lại lưới
+  // Trục nào đang có ghim (dùng trong listener pinch, xem onStart).
+  const freezeOn = useRef({ row: false, col: false });
+  // Điểm neo của lần đổi zoom gần nhất: { mx,my } toạ độ trong khung nhìn và
+  // { x,y } điểm nội dung (chưa zoom) phải nằm đúng chỗ đó sau khi zoom.
+  const anchor = useRef(null);
 
   const sheet = model && model.sheets && model.sheets[si];
 
@@ -104,11 +133,16 @@ export default function ExcelGrid({ model }) {
   useLayoutEffect(() => {
     const tbl = tableRef.current;
     const wrap = wrapRef.current;
-    if (!tbl || !wrap || !tbl.tHead || !tbl.tBodies[0]) {
+    if (!tbl || !wrap || !sheet || !tbl.tHead || !tbl.tBodies[0]) {
       setGeom(null);
       return;
     }
-    const z = ZOOMS[zoomIdx] || 1;
+    // Đang chụm hai ngón: giữ geom cũ. geom đã ở hệ toạ độ CHƯA zoom nên không
+    // đổi theo zoom; đo lại giữa cử chỉ chỉ tốn vài trăm getBoundingClientRect
+    // mỗi frame -> pinch giật. Đo lại một lần khi nhả tay (resizeTick).
+    if (pinching.current) return;
+
+    const z = zoom || 1;
     const wrapRect = wrap.getBoundingClientRect();
     const head = tbl.tHead.rows[0];
     const colW = Array.from(head.cells).map(
@@ -131,8 +165,224 @@ export default function ExcelGrid({ model }) {
       ? rowTop[0]
       : head.getBoundingClientRect().height / z;
 
-    setGeom({ colLeft, colW, rowTop, rowH, headH });
-  }, [si, showHidden, zoomIdx, model, visIdx.length, visRows.length]);
+    // Bề rộng/chiều cao khối đóng băng (đã gồm cột số dòng và dải tiêu đề cột)
+    // và cỡ khung nhìn — dùng để quyết định có ghim hay không khi chỗ quá chật
+    // (xem colFreezeActive / rowFreezeActive). Tất cả ở hệ toạ độ CHƯA zoom,
+    // giống colLeft/rowTop; cỡ khung nhìn chia cho z nên khi zoom to thì
+    // "khung nhìn quy đổi" nhỏ lại -> tự bỏ ghim, đúng như cảm nhận thật.
+    const fc = (sheet.freeze && sheet.freeze.cols) || 0;
+    let frozenW = 0;
+    if (fc > 0) {
+      let p = -1;
+      visIdx.forEach((c0, k) => {
+        if (c0 + 1 <= fc) p = k;
+      });
+      if (p >= 0) frozenW = (colLeft[p + 1] || 0) + (colW[p + 1] || 0);
+    }
+    const fr = (sheet.freeze && sheet.freeze.rows) || 0;
+    let frozenH = 0;
+    if (fr > 0) {
+      let p = -1;
+      visRows.forEach((r0, k) => {
+        if (r0 + 1 <= fr) p = k;
+      });
+      if (p >= 0) frozenH = (rowTop[p] || 0) + (rowH[p] || 0);
+    }
+    const viewW = (scrollRef.current?.clientWidth || wrapRect.width) / z;
+    const viewH = (scrollRef.current?.clientHeight || wrapRect.height) / z;
+
+    setGeom({
+      colLeft,
+      colW,
+      rowTop,
+      rowH,
+      headH,
+      frozenW,
+      frozenH,
+      viewW,
+      viewH,
+    });
+    // `sheet` và `visIdx` CỐ Ý không nằm trong deps: `colHidden` fallback về `[]`
+    // mới mỗi lần render nên visIdx có thể đổi identity liên tục -> effect chạy
+    // lại -> setGeom -> render -> vòng lặp. Chúng chỉ đổi cùng lúc với
+    // model/si/showHidden, đã có trong deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [si, showHidden, zoom, model, visIdx.length, visRows.length, resizeTick]);
+
+  // --- Zoom -----------------------------------------------------------------
+  // Đổi zoom kèm ĐIỂM NEO: điểm nội dung `at.x/at.y` (đơn vị chưa zoom) phải
+  // vẫn nằm ở `at.mx/at.my` trong khung nhìn sau khi zoom, nếu không lưới sẽ
+  // nhảy đi mất chỗ đang xem. Việc chỉnh scrollLeft/Top làm ở useLayoutEffect
+  // bên dưới, sau khi DOM đã áp zoom mới.
+  const applyZoom = useCallback((z, at) => {
+    const nz = clampZoom(z);
+    anchor.current = at || null;
+    zoomRef.current = nz;
+    setZoom(nz);
+  }, []);
+
+  useLayoutEffect(() => {
+    const sc = scrollRef.current;
+    const at = anchor.current;
+    anchor.current = null;
+    if (!sc || !at) return;
+    sc.scrollLeft = at.x * zoom - at.mx;
+    sc.scrollTop = at.y * zoom - at.my;
+  }, [zoom]);
+
+  // Chụm hai ngón để zoom (và Ctrl+lăn chuột / chụm trên trackpad).
+  //
+  // Listener phải gắn TAY với { passive:false }: React đăng ký touchmove/wheel
+  // ở root dạng passive, preventDefault() trong onTouchMove/onWheel của React
+  // không có tác dụng -> Safari sẽ zoom CẢ TRANG thay vì để ta zoom lưới.
+  useEffect(() => {
+    const sc = scrollRef.current;
+    if (!sc) return;
+
+    const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    // Điểm nội dung (chưa zoom) đang nằm dưới toạ độ màn hình (cx, cy).
+    const at = (cx, cy, z) => {
+      const r = sc.getBoundingClientRect();
+      const mx = cx - r.left;
+      const my = cy - r.top;
+      return { mx, my, x: (sc.scrollLeft + mx) / z, y: (sc.scrollTop + my) / z };
+    };
+
+    let start = null; // { d0, z0, sl0, st0, at, last }
+
+    const onStart = (e) => {
+      if (e.touches.length !== 2) return;
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const z = zoomRef.current;
+      const d0 = dist(a, b);
+      if (!d0) return;
+      pinching.current = true;
+      const r = sc.getBoundingClientRect();
+      // ĐIỂM NEO của cử chỉ. Bình thường neo vào tâm hai ngón cho tự nhiên,
+      // NHƯNG trục nào đang có dải đóng băng thì neo vào MÉP khung nhìn (mx/my
+      // = 0): dải đóng băng bám ở mép, nếu neo giữa màn hình thì trong lúc chụm
+      // nó bị scale trôi đi rồi khi nhả tay sticky ghim lại -> nhảy giật (đo
+      // được 253px với 6 dòng tiêu đề của DHN). Neo vào mép thì mép trên/trái
+      // của dải là điểm cố định, dải chỉ nở ra chứ không dịch chỗ.
+      const mx = freezeOn.current.col ? 0 : (a.clientX + b.clientX) / 2 - r.left;
+      const my = freezeOn.current.row ? 0 : (a.clientY + b.clientY) / 2 - r.top;
+      start = {
+        d0,
+        z0: z,
+        last: z,
+        sl0: sc.scrollLeft,
+        st0: sc.scrollTop,
+        at: {
+          mx,
+          my,
+          x: (sc.scrollLeft + mx) / z,
+          y: (sc.scrollTop + my) / z,
+        },
+      };
+      if (wrapRef.current) wrapRef.current.classList.add("xlpinch");
+    };
+
+    // TRONG lúc chụm chỉ dùng `transform: scale()`, KHÔNG đổi `zoom` và KHÔNG
+    // setState.
+    //
+    // Vì sao: đổi `zoom` bắt trình duyệt layout lại toàn bộ bảng (DHN ~290 dòng
+    // × ~20 cột) VÀ tính lại vị trí của mọi ô position:sticky, mỗi frame một
+    // lần. Dải dòng đóng băng ở trên vì thế cứ chực bám lại chỗ cũ trong lúc
+    // phần còn lại đã phóng to -> trông như bị trễ/giật đúng ở mấy hàng đầu.
+    // transform thì chỉ chạy ở compositor: cả lưới (kể cả dải đóng băng) phóng
+    // to như một tấm ảnh, không layout, không tính lại sticky. Khi nhả tay mới
+    // commit `zoom` thật một lần và ghim lại sticky.
+    //
+    // Toạ độ: scroll KHÔNG đổi trong lúc chụm, nên điểm neo (đang ở scroller-x
+    // = sl0 + mx) sau khi scale k sẽ nhảy tới (sl0 + mx) * k - sl0; cần dịch
+    // thêm S để nó về lại mx. Giá trị translate viết trong hệ CSS của .xlwrap
+    // (đang bị `zoom: z0` nhân lên) nên phải chia lại cho z0.
+    const onMove = (e) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault(); // chặn pinch-zoom + cuộn của trình duyệt
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const { z0, sl0, st0 } = start;
+      // Kẹp ngay trên k để lúc nhả tay không bị "giật" về mức đã kẹp.
+      const k = clampZoom(z0 * (dist(e.touches[0], e.touches[1]) / start.d0)) / z0;
+      const sx = start.at.mx + sl0 - (sl0 + start.at.mx) * k;
+      const sy = start.at.my + st0 - (st0 + start.at.my) * k;
+      start.last = z0 * k;
+      wrap.style.transform = `translate(${sx / z0}px, ${sy / z0}px) scale(${k})`;
+    };
+
+    const onEnd = () => {
+      if (!start) return;
+      const { last, at: anchorAt } = start;
+      start = null;
+      pinching.current = false;
+      const wrap = wrapRef.current;
+      if (wrap) {
+        // Bỏ transform và commit zoom trong CÙNG một lượt xử lý sự kiện: React
+        // 18 flush trước khi vẽ frame kế tiếp nên không thấy nháy về cỡ cũ.
+        wrap.style.transform = "";
+        wrap.classList.remove("xlpinch");
+      }
+      applyZoom(last, anchorAt); // commit state + con số % ở thanh trạng thái
+      setResizeTick((t) => t + 1); // đo lại lưới sau khi nhả tay
+    };
+
+    // Safari còn phát gesturestart/gesturechange riêng; không chặn thì vẫn zoom
+    // cả trang song song với zoom lưới.
+    const onGesture = (e) => e.preventDefault();
+
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return; // chụm trackpad / Ctrl+lăn = zoom, còn lại là cuộn
+      e.preventDefault();
+      const z = zoomRef.current;
+      applyZoom(z * (e.deltaY < 0 ? 1.1 : 1 / 1.1), at(e.clientX, e.clientY, z));
+    };
+
+    sc.addEventListener("touchstart", onStart, { passive: false });
+    sc.addEventListener("touchmove", onMove, { passive: false });
+    sc.addEventListener("touchend", onEnd);
+    sc.addEventListener("touchcancel", onEnd);
+    sc.addEventListener("gesturestart", onGesture);
+    sc.addEventListener("gesturechange", onGesture);
+    sc.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      sc.removeEventListener("touchstart", onStart);
+      sc.removeEventListener("touchmove", onMove);
+      sc.removeEventListener("touchend", onEnd);
+      sc.removeEventListener("touchcancel", onEnd);
+      sc.removeEventListener("gesturestart", onGesture);
+      sc.removeEventListener("gesturechange", onGesture);
+      sc.removeEventListener("wheel", onWheel);
+    };
+  }, [applyZoom]);
+
+  // Quay ngang máy / đổi cỡ cửa sổ / thanh địa chỉ Safari co lại -> đo lại
+  // viewW để tính lại việc ghim cột.
+  //
+  // Theo dõi bằng ResizeObserver trên chính khung cuộn, KHÔNG chỉ nghe window
+  // resize: có trường hợp khung nhìn đổi kích thước mà window không phát resize
+  // (đã gặp khi đổi cỡ viewport bằng emulation của DevTools) -> geom giữ viewW
+  // cũ, ghim cột tính sai. Zoom không làm .xlscroll đổi cỡ (chỉ .xlwrap bên
+  // trong bị scale) nên không có vòng lặp observer.
+  useLayoutEffect(() => {
+    const sc = scrollRef.current;
+    const bump = () => setResizeTick((t) => t + 1);
+    let ro = null;
+    if (sc && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(bump);
+      ro.observe(sc);
+    }
+    // Giữ CẢ hai: callback của ResizeObserver được phát trong vòng render của
+    // trang nên tab bị ẩn/không vẽ frame thì không tới (đã đo), còn listener
+    // resize thì chạy ngay.
+    window.addEventListener("resize", bump);
+    window.addEventListener("orientationchange", bump);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("orientationchange", bump);
+    };
+  }, []);
 
   // Đổi sheet thì về góc trên-trái, tránh giữ vị trí cuộn của sheet trước.
   useLayoutEffect(() => {
@@ -145,8 +395,33 @@ export default function ExcelGrid({ model }) {
 
   if (!sheet) return null;
 
-  const zoom = ZOOMS[zoomIdx];
   const freeze = sheet.freeze || null;
+
+  // Nút − / + : nhảy tới mức kế tiếp trong ZOOMS, neo vào TÂM khung nhìn.
+  const zoomStep = (dir) => {
+    const sc = scrollRef.current;
+    const next =
+      dir > 0
+        ? ZOOMS.find((v) => v > zoom + 1e-4) ?? ZOOM_MAX
+        : [...ZOOMS].reverse().find((v) => v < zoom - 1e-4) ?? ZOOM_MIN;
+    let at = null;
+    if (sc) {
+      const mx = sc.clientWidth / 2;
+      const my = sc.clientHeight / 2;
+      at = { mx, my, x: (sc.scrollLeft + mx) / zoom, y: (sc.scrollTop + my) / zoom };
+    }
+    applyZoom(next, at);
+  };
+
+  // Bấm vào con số % : về 100%.
+  // (KHÔNG làm "vừa bề rộng": bảng DHN rộng ~2500px, nhồi vào 375px là ~15% —
+  // dưới cả ZOOM_MIN và chữ nhỏ tới mức không đọc được.)
+  const zoomReset = () => {
+    const sc = scrollRef.current;
+    if (!sc) return applyZoom(1, null);
+    // Neo mép trái, giữ nguyên vị trí dọc đang xem.
+    applyZoom(1, { mx: 0, my: 0, x: 0, y: sc.scrollTop / zoom });
+  };
 
   // Số cột hiển thị trong vùng merge [c, c+cs-1] -> colspan sau khi bỏ cột ẩn.
   const visSpan = (c, cs) => {
@@ -185,14 +460,42 @@ export default function ExcelGrid({ model }) {
   // --- freeze pane -----------------------------------------------------------
   // Cột 1..freeze.cols và dòng 1..freeze.rows được ghim bằng position:sticky,
   // offset lấy từ toạ độ đo thật (colLeft/rowTop) nên khớp cả khi có cột ẩn.
-  const isFrozenCol = (c1) => !!freeze && c1 <= freeze.cols; // c1: 1-based
-  const isFrozenRow = (r1) => !!freeze && r1 <= freeze.rows;
+  //
+  // TRÊN MÀN HÌNH HẸP PHẢI BỎ GHIM CỘT. File DHN đóng băng tới cột "Nội dung"
+  // (rộng ~250px) nên khối ghim + cột số dòng chiếm gần hết bề rộng điện thoại:
+  // cuộn ngang thì phần ghim đứng im, chỉ còn vài chục pixel cho dữ liệu chạy
+  // qua -> người dùng thấy "không kéo ngang được". Khi khối ghim chiếm > 55%
+  // khung nhìn thì tự bỏ ghim cột (vẫn giữ ghim DÒNG tiêu đề); người dùng bật
+  // lại được bằng ô "Ghim cột" ở thanh trạng thái.
+  const colFreezeCramped =
+    !!geom && geom.frozenW > 0 && geom.frozenW > geom.viewW * 0.55;
+  const colFreezeActive =
+    !!freeze &&
+    freeze.cols > 0 &&
+    (colFreezeMode === "on" ||
+      (colFreezeMode === "auto" && !colFreezeCramped));
+
+  // Dòng đóng băng cũng vậy: file DHN ghim 6 dòng tiêu đề, phóng to 300% thì
+  // dải này cao gấp 3 và KHÔNG cuộn đi được -> chiếm nửa màn hình. Quá 50%
+  // chiều cao khung nhìn thì tự bỏ ghim dòng.
+  const rowFreezeCramped =
+    !!geom && geom.frozenH > 0 && geom.frozenH > geom.viewH * 0.5;
+  const rowFreezeActive =
+    !!freeze &&
+    freeze.rows > 0 &&
+    (rowFreezeMode === "on" ||
+      (rowFreezeMode === "auto" && !rowFreezeCramped));
+
+  freezeOn.current = { row: rowFreezeActive, col: colFreezeActive };
+
+  const isFrozenCol = (c1) => colFreezeActive && c1 <= freeze.cols; // c1: 1-based
+  const isFrozenRow = (r1) => rowFreezeActive && r1 <= freeze.rows;
 
   // Ở mức zoom lẻ (125%, 150%...) chiều cao dòng thành số thập phân, Chrome làm
   // tròn vị trí ghim theo pixel thiết bị khác nhau ở mỗi dòng -> hở ~0,3px giữa
   // các dòng đã ghim và nội dung đang cuộn lộ qua. Lùi 0,5px cho các ô ghim CHỒNG
   // nhẹ lên nhau thay vì hở. Ở 100% thì không lùi để đường kẻ không bị nhoè.
-  const bias = zoom === 1 ? 0 : 0.5;
+  const bias = Math.abs(zoom - 1) < 1e-4 ? 0 : 0.5;
 
   const stickyColStyle = (c1) => {
     if (!isFrozenCol(c1) || !geom) return null;
@@ -372,8 +675,28 @@ export default function ExcelGrid({ model }) {
                           colSpan={cs}
                           className={inSel(cell.r, cell.c) ? "sel" : ""}
                           style={style}
-                          onMouseDown={() => start(cell.r, cell.c)}
-                          onMouseEnter={() => move(cell.r, cell.c)}
+                          // Chỉ CHUỘT mới kéo-chọn vùng. Ngón tay kéo trên ô mà
+                          // cũng chọn vùng thì mỗi lần di là một lần setState ->
+                          // re-render giữa cử chỉ, cuộn ngang bị chặn/giật.
+                          // Cảm ứng thì chỉ chạm 1 ô để xem địa chỉ (onClick).
+                          onPointerDown={(e) => {
+                            lastPtr.current = e.pointerType || "mouse";
+                            if (lastPtr.current === "mouse")
+                              start(cell.r, cell.c);
+                          }}
+                          onPointerEnter={(e) => {
+                            if ((e.pointerType || "mouse") === "mouse")
+                              move(cell.r, cell.c);
+                          }}
+                          onClick={() => {
+                            if (lastPtr.current !== "mouse")
+                              setSel({
+                                r1: cell.r,
+                                c1: cell.c,
+                                r2: cell.r,
+                                c2: cell.c,
+                              });
+                          }}
                           dangerouslySetInnerHTML={{ __html: cell.text }}
                         />
                       );
@@ -432,6 +755,30 @@ export default function ExcelGrid({ model }) {
       <div className="xlsbar">
         <span className="xladdr">{addr}</span>
         <span className="xltools">
+          {!!freeze && freeze.cols > 0 && (
+            <label className="xlhiddentoggle" title="Ghim các cột đầu khi cuộn ngang">
+              <input
+                type="checkbox"
+                checked={colFreezeActive}
+                onChange={(e) =>
+                  setColFreezeMode(e.target.checked ? "on" : "off")
+                }
+              />
+              Ghim cột
+            </label>
+          )}
+          {!!freeze && freeze.rows > 0 && (
+            <label className="xlhiddentoggle" title="Ghim các dòng tiêu đề khi cuộn dọc">
+              <input
+                type="checkbox"
+                checked={rowFreezeActive}
+                onChange={(e) =>
+                  setRowFreezeMode(e.target.checked ? "on" : "off")
+                }
+              />
+              Ghim dòng
+            </label>
+          )}
           {hiddenCount > 0 && (
             <label className="xlhiddentoggle">
               <input
@@ -445,19 +792,24 @@ export default function ExcelGrid({ model }) {
           <span className="xlzoom">
             <button
               type="button"
-              onClick={() => setZoomIdx((i) => Math.max(0, i - 1))}
-              disabled={zoomIdx === 0}
+              onClick={() => zoomStep(-1)}
+              disabled={zoom <= ZOOM_MIN + 1e-4}
               title="Thu nhỏ"
             >
               −
             </button>
-            <span className="xlzoomval">{Math.round(zoom * 100)}%</span>
             <button
               type="button"
-              onClick={() =>
-                setZoomIdx((i) => Math.min(ZOOMS.length - 1, i + 1))
-              }
-              disabled={zoomIdx === ZOOMS.length - 1}
+              className="xlzoomval"
+              onClick={zoomReset}
+              title="Về 100% (trên điện thoại chụm hai ngón để phóng to/thu nhỏ)"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => zoomStep(1)}
+              disabled={zoom >= ZOOM_MAX - 1e-4}
               title="Phóng to"
             >
               +

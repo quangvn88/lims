@@ -551,7 +551,6 @@ export function formatCellValue(value, numFmt) {
 
   const sections = splitSections(code).map(parseSection);
 
-  /* eslint-disable-next-line no-use-before-define */
   // Chuỗi: dùng vùng thứ 4 nếu có.
   if (!isNum && !isDate) {
     const sec = sections.length >= 4 ? sections[3] : null;

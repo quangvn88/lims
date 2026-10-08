@@ -293,6 +293,25 @@ body, html, #root, .App {
   text-align: left;
 }
 
+/* CHXD dang focus khi URL khong co i_matnr: khong co nhan gia de nhap nhay
+   nen cho chinh icon marker nhap nhay. Chi dung filter/opacity - Leaflet dinh
+   vi marker bang transform nen animate transform se lam marker nhay vi tri. */
+@keyframes pulseMarkerIcon {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(255, 59, 48, 0.7));
+    opacity: 1;
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(255, 59, 48, 1));
+    opacity: 0.45;
+  }
+}
+
+.plx-marker-pulse {
+  animation: pulseMarkerIcon 1.2s infinite;
+}
+
 .distance-tooltip {
   background-color: rgba(255, 255, 255, 0.9);
   color: #ff8800;

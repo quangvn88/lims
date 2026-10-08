@@ -38,12 +38,25 @@
   flex: 1;
   overflow: auto;
   min-height: 0;
+  /* Cảm ứng: cho phép vuốt CẢ hai trục (mặc định của trình duyệt là auto, nhưng
+     khai báo rõ để không tổ tiên nào vô tình khoá trục ngang), kèm quán tính
+     của WebKit và không "xả" cử chỉ ra trang ngoài khi đã cuộn hết biên. */
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 /* Bọc bảng để ảnh/biểu đồ định vị tuyệt đối theo đúng gốc toạ độ của bảng.
    Dùng CSS `zoom` (không phải transform) vì transform làm position:sticky mất tác dụng. */
 .xlwrap {
   position: relative;
   width: max-content;
+  /* Gốc toạ độ cho transform lúc chụm hai ngón (xem onMove trong ExcelGrid.jsx):
+     công thức dịch điểm neo được viết theo gốc góc trên-trái. */
+  transform-origin: 0 0;
+}
+/* Chỉ trong lúc đang chụm hai ngón. */
+.xlwrap.xlpinch {
+  will-change: transform;
 }
 /* KHÔNG dùng `border-collapse: collapse`.
    Chrome vẽ viền của bảng collapse ở tầng BẢNG chứ không thuộc từng ô, nên ô
@@ -224,7 +237,45 @@ table.xl td.sel {
   opacity: 0.4;
   cursor: default;
 }
-.xlzoomval {
-  min-width: 38px;
+/* Con số % cũng là một nút (bấm để vừa bề rộng / về 100%) nên phải ghi đè bề
+   rộng cố định 20px của .xlzoom button ở trên. */
+.xlzoom button.xlzoomval {
+  width: auto;
+  min-width: 46px;
+  padding: 0 6px;
   text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Điện thoại ----------------------------------------------------------- */
+/* Thanh trạng thái có thêm ô "Ghim cột" nên trên màn hẹp phải cho xuống dòng,
+   nếu không nút zoom bị đẩy ra ngoài mép phải và không bấm được. */
+@media (max-width: 640px) {
+  .xlsbar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .xladdr {
+    flex: 1 1 100%;
+  }
+  .xltools {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  /* Vùng chạm của ô tick và nút zoom đủ lớn cho ngón tay. */
+  .xlhiddentoggle input {
+    width: 16px;
+    height: 16px;
+  }
+  .xlzoom button {
+    width: 26px;
+    height: 26px;
+  }
+  .xlzoom button.xlzoomval {
+    width: auto;
+    min-width: 52px;
+  }
 }

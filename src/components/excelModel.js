@@ -32,7 +32,17 @@ const esc = (s) =>
 // Bảng màu theme mặc định của Office. File .xlsx rất hay dùng màu theme
 // (font/fill khai `{ theme: 4, tint: 0.4 }` chứ không có argb) — nếu bỏ qua thì
 // mất hết màu chữ/nền, đây là nguyên nhân phổ biến nhất làm lưới "nhạt" hơn gốc.
-const THEME_COLORS = [
+// Bảng màu theme MẶC ĐỊNH của Office (bộ "Office 2013+"). CHỈ dùng khi file
+// không kèm xl/theme/theme1.xml — còn lại luôn đọc bảng màu THẬT trong file.
+//
+// Vì sao bắt buộc phải đọc từ file: file do SAP sinh ra dùng bộ theme Office
+// 2007-2010, khác hẳn bảng dưới đây ở đúng những chỉ số đang được dùng:
+//   accent5 (chỉ số 8): file #4bacc6  <-> mặc định #5b9bd5
+//   accent6 (chỉ số 9): file #f79646  <-> mặc định #70ad47
+// Biểu TỒN KHO tô nền cột "Tổng Xăng/DO/FO" bằng accent5 tint 0,8 và tô dòng
+// mã "T" bằng accent6 tint 0,8 -> lấy bảng cứng thì ra xanh dương + xanh lá,
+// trong khi Excel hiện xanh ngọc + cam nhạt.
+const DEFAULT_THEME_COLORS = [
   "#ffffff", // 0 lt1 / bg1
   "#000000", // 1 dk1 / tx1
   "#e7e6e6", // 2 lt2 / bg2
@@ -46,6 +56,46 @@ const THEME_COLORS = [
   "#0563c1", // 10 hlink
   "#954f72", // 11 folHlink
 ];
+
+// Bảng màu theme của workbook ĐANG parse. Đặt ở mức module vì `argb()` được gọi
+// từ rất nhiều chỗ; `parseWorkbook` gán lại ngay đầu mỗi lần chạy.
+let THEME_COLORS = DEFAULT_THEME_COLORS;
+
+/**
+ * Đọc <a:clrScheme> trong xl/theme/theme1.xml thành bảng màu theo ĐÚNG chỉ số
+ * mà styles.xml dùng ở thuộc tính theme="n".
+ *
+ * BẪY: thứ tự trong XML là dk1, lt1, dk2, lt2, accent1..6, hlink, folHlink —
+ * NHƯNG chỉ số theme của Excel lại ĐẢO hai cặp đầu: 0=lt1, 1=dk1, 2=lt2, 3=dk2.
+ * Lấy thẳng thứ tự XML là sai màu chữ/nền.
+ * Màu có thể khai bằng <a:srgbClr val="..."/> hoặc <a:sysClr lastClr="..."/>.
+ */
+function parseThemeColors(xml) {
+  const m = /<a:clrScheme[^>]*>([\s\S]*?)<\/a:clrScheme>/.exec(xml || "");
+  if (!m) return null;
+  const byName = {};
+  const re =
+    /<a:(dk1|lt1|dk2|lt2|accent[1-6]|hlink|folHlink)>[\s\S]*?(?:srgbClr val="([0-9A-Fa-f]{6})"|sysClr[^>]*lastClr="([0-9A-Fa-f]{6})")/g;
+  let e;
+  while ((e = re.exec(m[1])))
+    byName[e[1]] = "#" + (e[2] || e[3]).toLowerCase();
+  const order = [
+    "lt1",
+    "dk1",
+    "lt2",
+    "dk2",
+    "accent1",
+    "accent2",
+    "accent3",
+    "accent4",
+    "accent5",
+    "accent6",
+    "hlink",
+    "folHlink",
+  ];
+  const out = order.map((k, i) => byName[k] || DEFAULT_THEME_COLORS[i]);
+  return Object.keys(byName).length ? out : null;
+}
 
 /** Áp tint của OOXML (xấp xỉ trên RGB, đủ chính xác cho việc xem file). */
 function applyTint(hex, tint) {
@@ -78,11 +128,92 @@ function argb(c) {
   return null;
 }
 
+/**
+ * Đọc công thức của conditional formatting kiểu `expression` thành danh sách
+ * điều kiện "so ô mốc với một chuỗi". Trả về null nếu gặp dạng chưa hỗ trợ —
+ * khi đó rule bị bỏ qua chứ không tô sai.
+ *
+ * Hai dạng đang gặp trong biểu TỒN KHO DỰ TRỮ LƯU THÔNG:
+ *   $A7="T"                              -> mốc theo DÒNG: cột A cố định, dòng trôi
+ *                                           theo ô đang xét (tô cả dòng theo mã T/B/I/M/F/R).
+ *   AND(D$6="Tổng Xăng", $D6<>"")        -> mốc theo CỘT: dòng 6 (tiêu đề) cố định,
+ *                                           cột trôi theo ô đang xét; kèm điều kiện
+ *                                           cột D của dòng đó không rỗng.
+ *                                           Đây là cách tô nền xanh cho các cột
+ *                                           "Tổng Xăng" / "Tổng DO" / "Tổng FO".
+ * Dấu $ đứng trước CỘT hay trước DÒNG quyết định phần nào cố định — đọc đúng chỗ
+ * này mới ra được cả hai dạng bằng một bộ máy.
+ */
+function parseCfConds(formula) {
+  const s = String(formula || "").trim();
+  const and = s.match(/^AND\s*\(([\s\S]*)\)$/i);
+  const parts = and ? splitTopLevelArgs(and[1]) : [s];
+  const conds = [];
+  for (const p of parts) {
+    // $?COL$?ROW  ( = | <> )  "chuỗi"
+    const m = p.trim().match(/^(\$?)([A-Z]+)(\$?)(\d+)\s*(<>|=)\s*"([\s\S]*)"$/);
+    if (!m) return null;
+    conds.push({
+      colAbs: m[1] === "$",
+      col: colLetterToNum(m[2]),
+      rowAbs: m[3] === "$",
+      row: +m[4],
+      neq: m[5] === "<>",
+      value: m[6],
+    });
+  }
+  return conds.length ? conds : null;
+}
+
+/** Cắt tham số của AND(...) theo dấu phẩy, BỎ QUA phẩy nằm trong "..." hoặc (). */
+function splitTopLevelArgs(s) {
+  const out = [];
+  let cur = "";
+  let q = false;
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"') q = !q;
+    else if (!q && ch === "(") depth++;
+    else if (!q && ch === ")") depth--;
+    if (ch === "," && !q && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 function colLetterToNum(s) {
   let n = 0;
   for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64);
   return n;
 }
+// xSplit/ySplit của freeze pane -> chỉ số 1-based của cột/dòng CUỐI CÙNG trong
+// khối ghim.
+//
+// Theo ECMA-376, khi state="frozen" thì xSplit là "số cột NHÌN THẤY trong pane
+// bên trái", KHÔNG phải chỉ số cột. Nên khi có cột ẩn nằm trước biên ghim, hai
+// con số lệch nhau: file thù lao ẩn cột A rồi ghim tới hết cột B, Excel ghi
+// xSplit="1" (chỉ B là cột hiện) kèm <pane topLeftCell="C10"/> — C10 là ô đầu
+// của vùng CHƯA ghim, tức khối ghim đúng là A+B.
+// `hidden[i]` = true nếu cột/dòng thứ i+1 bị ẩn. File không có cột/dòng ẩn
+// trước biên thì hàm trả về đúng `split` -> các file cũ (DHN) không đổi.
+export function visibleSplitToIndex(split, hidden, count) {
+  const n = Number(split) || 0;
+  if (n <= 0) return 0;
+  let seen = 0;
+  for (let i = 1; i <= count; i++) {
+    if (!(hidden && hidden[i - 1])) seen++;
+    if (seen >= n) return i;
+  }
+  // Ghim nhiều hơn số cột/dòng đang hiện: ghim tới hết vùng dữ liệu.
+  return Math.max(count, n);
+}
+
 function parseRange(r) {
   const m = String(r).match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
   if (!m) return null;
@@ -312,6 +443,128 @@ function readImages(wb, ws) {
  * @param {Uint8Array|ArrayBuffer} bytes nội dung file .xlsx
  * @returns {Promise<{sheets: Array}>}
  */
+/** Lấy bảng màu theme từ xl/theme/theme1.xml trong zip; null nếu không có. */
+async function readThemeColors(bytes) {
+  try {
+    const JSZip = (await import("jszip")).default || (await import("jszip"));
+    const ab =
+      bytes instanceof ArrayBuffer
+        ? bytes
+        : bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength
+          );
+    const zip = await JSZip.loadAsync(ab);
+    // Tên file theme không cố định là theme1.xml -> quét cả thư mục.
+    const f =
+      zip.file("xl/theme/theme1.xml") ||
+      zip.file(/^xl\/theme\/theme\d*\.xml$/)[0];
+    if (!f) return null;
+    return parseThemeColors(await f.async("string"));
+  } catch (e) {
+    console.warn("[excelModel] không đọc được theme màu:", e && e.message);
+    return null;
+  }
+}
+
+// ExcelJS đọc `<b val="0"/>` thành bold:true — BooleanXform của nó chỉ xét sự CÓ
+// MẶT của thẻ và bỏ qua attribute `val`. Với style tĩnh thì gần như vô hại (Excel
+// chỉ ghi `<b/>` khi ô thật sự đậm), nhưng dxf của conditional formatting lại
+// dùng `val="0"` để TẮT: `<font><b val="0"/><i/></font>` nghĩa là "in nghiêng,
+// KHÔNG đậm". Hiểu sai thành đậm+nghiêng làm mọi ô bị CF phủ đều bôi đậm/nghiêng
+// sai so với file gốc.
+//
+// -> Đọc lại xl/styles.xml để lấy đúng 3 trạng thái: true = bật, false = TẮT
+// (phải đè style tĩnh của ô), undefined = dxf không khai (giữ style của ô).
+// Khớp ngược về từng rule theo (tên sheet, priority): ExcelJS không trả dxfId,
+// còn priority thì duy nhất trong một sheet.
+/** @returns {Promise<Object|null>} { [tênSheet]: { [priority]: {bold, italic} } } */
+async function readCfFontFlags(bytes) {
+  try {
+    const JSZip = (await import("jszip")).default || (await import("jszip"));
+    const ab =
+      bytes instanceof ArrayBuffer
+        ? bytes
+        : bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength
+          );
+    const zip = await JSZip.loadAsync(ab);
+    const parser = new DOMParser();
+    const readXml = async (path) => {
+      const f = zip.file(path);
+      if (!f) return null;
+      const doc = parser.parseFromString(
+        await f.async("string"),
+        "application/xml"
+      );
+      return doc.getElementsByTagName("parsererror").length ? null : doc;
+    };
+
+    const stylesDoc = await readXml("xl/styles.xml");
+    const dxfs = stylesDoc && stylesDoc.getElementsByTagName("dxfs")[0];
+    if (!dxfs) return null;
+    // Boolean của OOXML: thiếu `val` = true; "0"/"false" = false.
+    const flagOf = (el) => {
+      if (!el) return undefined;
+      const v = el.getAttribute("val");
+      return v == null || v === "" ? true : v !== "0" && v !== "false";
+    };
+    const dxfFlags = [];
+    const dxfList = dxfs.getElementsByTagName("dxf");
+    for (let i = 0; i < dxfList.length; i++) {
+      const fo = dxfList[i].getElementsByTagName("font")[0];
+      dxfFlags.push({
+        bold: fo ? flagOf(fo.getElementsByTagName("b")[0]) : undefined,
+        italic: fo ? flagOf(fo.getElementsByTagName("i")[0]) : undefined,
+      });
+    }
+
+    const wbDoc = await readXml("xl/workbook.xml");
+    const relsDoc = await readXml("xl/_rels/workbook.xml.rels");
+    if (!wbDoc || !relsDoc) return null;
+    const rels = {};
+    const relEls = relsDoc.getElementsByTagName("Relationship");
+    for (let i = 0; i < relEls.length; i++) {
+      rels[relEls[i].getAttribute("Id")] = relEls[i].getAttribute("Target");
+    }
+
+    const out = {};
+    const sheetEls = wbDoc.getElementsByTagName("sheet");
+    for (let i = 0; i < sheetEls.length; i++) {
+      const target = rels[sheetEls[i].getAttribute("r:id")];
+      if (!target) continue;
+      // Target thường là "worksheets/sheet1.xml" (tương đối với xl/), nhưng có
+      // file ghi tuyệt đối "/xl/worksheets/sheet1.xml".
+      let path = String(target).replace(/^\.\//, "");
+      path = path.startsWith("/")
+        ? path.slice(1)
+        : path.startsWith("xl/")
+          ? path
+          : "xl/" + path;
+      const shDoc = await readXml(path);
+      if (!shDoc) continue;
+      const byPriority = {};
+      const rules = shDoc.getElementsByTagName("cfRule");
+      for (let k = 0; k < rules.length; k++) {
+        const pri = rules[k].getAttribute("priority");
+        const dxfId = rules[k].getAttribute("dxfId");
+        if (pri == null || dxfId == null) continue;
+        const fl = dxfFlags[+dxfId];
+        if (fl) byPriority[pri] = fl;
+      }
+      out[sheetEls[i].getAttribute("name") || ""] = byPriority;
+    }
+    return out;
+  } catch (e) {
+    console.warn(
+      "[excelModel] không đọc được dxf của conditional formatting:",
+      e && e.message
+    );
+    return null;
+  }
+}
+
 export async function parseWorkbook(bytes) {
   const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
   const wb = new ExcelJS.Workbook();
@@ -324,6 +577,14 @@ export async function parseWorkbook(bytes) {
   // Chart + ảnh đọc trực tiếp từ zip (ExcelJS không đọc được chart). Làm TRƯỚC
   // khi nạp ExcelJS vì ExcelJS có thể sửa/consume buffer.
   const drawingsBySheet = await parseDrawings(bytes);
+
+  // Bảng màu theme phải lấy từ CHÍNH FILE (ExcelJS không expose clrScheme).
+  // Không đọc thì mọi màu khai kiểu theme="n" đều sai — xem chú thích ở
+  // DEFAULT_THEME_COLORS.
+  THEME_COLORS = (await readThemeColors(bytes)) || DEFAULT_THEME_COLORS;
+
+  // bold/italic thật của dxf conditional formatting (ExcelJS đọc sai `val="0"`).
+  const cfFontFlags = (await readCfFontFlags(bytes)) || {};
 
   try {
     await wb.xlsx.load(ab);
@@ -380,14 +641,19 @@ export async function parseWorkbook(bytes) {
           return;
         }
 
-        const mm = String(rule.formulae[0]).match(
-          /^\$([A-Z]+)(\d+)\s*=\s*"(.*)"$/
-        );
-        if (!mm) return;
+        const conds = parseCfConds(rule.formulae[0]);
+        if (!conds) return;
         let css = "";
         if (st.font) {
-          if (st.font.bold) css += "font-weight:600;";
-          if (st.font.italic) css += "font-style:italic;";
+          // Lấy bold/italic đọc lại từ file nếu có (xem readCfFontFlags);
+          // false = dxf TẮT hẳn -> phải khai 400/normal để đè style của ô.
+          const fl = (cfFontFlags[ws.name] || {})[String(rule.priority)];
+          const bold = fl ? fl.bold : st.font.bold;
+          const italic = fl ? fl.italic : st.font.italic;
+          if (bold === true) css += "font-weight:600;";
+          else if (bold === false) css += "font-weight:400;";
+          if (italic === true) css += "font-style:italic;";
+          else if (italic === false) css += "font-style:normal;";
           const fc = argb(st.font.color);
           if (fc) css += "color:" + fc + ";";
         }
@@ -401,9 +667,7 @@ export async function parseWorkbook(bytes) {
         if (!css && !st.border) return;
         cfRules.push({
           refs,
-          markerCol: colLetterToNum(mm[1]),
-          anchorRow: +mm[2],
-          value: mm[3],
+          conds,
           priority: rule.priority == null ? 9999 : +rule.priority,
           css,
           bd: st.border || null,
@@ -413,20 +677,51 @@ export async function parseWorkbook(bytes) {
     // Excel: priority nhỏ = ưu tiên cao. CSS thì khai báo sau thắng
     // -> xếp priority giảm dần để rule ưu tiên cao được ghi cuối.
     cfRules.sort((a, b) => b.priority - a.priority);
+    // Một rule CF quét lại vài ô mốc cho MỌI ô trong vùng (vùng hay khai tới
+    // hàng 3000) -> nhớ lại text của ô mốc, nếu không sẽ gọi getCell hàng trăm
+    // nghìn lần cho một sheet vài trăm dòng.
+    const markerCache = new Map();
+    const markerText = (rr, cc) => {
+      const k = rr + "_" + cc;
+      let v = markerCache.get(k);
+      if (v === undefined) {
+        v = rawVal(ws.getRow(rr).getCell(cc)).trim();
+        markerCache.set(k, v);
+      }
+      return v;
+    };
+
     // Các rule CF đang khớp ô (r,c), theo thứ tự ưu tiên tăng dần (cuối = thắng).
     const cfHits = (r, c) => {
       const hits = [];
       for (const rl of cfRules) {
         let fr = null;
+        let fc = null;
         for (const rf of rl.refs)
           if (c >= rf.c1 && c <= rf.c2 && r >= rf.r1 && r <= rf.r2) {
             fr = rf.r1;
+            fc = rf.c1;
             break;
           }
         if (fr === null) continue;
-        const refRow = rl.anchorRow + (r - fr);
-        const mv = rawVal(ws.getRow(refRow).getCell(rl.markerCol));
-        if (String(mv).trim() === rl.value) hits.push(rl);
+        // Toạ độ tương đối được dịch theo GÓC TRÊN-TRÁI của vùng, đúng như Excel:
+        // ô mốc $A7 (cột tuyệt đối) -> luôn cột A, dòng trôi theo ô đang xét;
+        // ô mốc D$6 (dòng tuyệt đối) -> luôn dòng 6, cột trôi theo ô đang xét.
+        let ok = true;
+        for (const cd of rl.conds) {
+          const cc = cd.colAbs ? cd.col : cd.col + (c - fc);
+          const rr = cd.rowAbs ? cd.row : cd.row + (r - fr);
+          if (rr < 1 || cc < 1) {
+            ok = false;
+            break;
+          }
+          const eq = markerText(rr, cc) === cd.value;
+          if (cd.neq ? eq : !eq) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) hits.push(rl);
       }
       return hits;
     };
@@ -585,12 +880,19 @@ export async function parseWorkbook(bytes) {
       rows.push({ h, cells });
     }
 
-    // Freeze pane: ws.views[0] = { state:'frozen', xSplit: số cột đóng băng,
-    // ySplit: số dòng đóng băng }.
+    // Freeze pane: ws.views[0] = { state:'frozen', xSplit, ySplit, topLeftCell }.
+    //
+    // xSplit/ySplit đếm theo cột/dòng NHÌN THẤY nên phải quy đổi qua cột/dòng ẩn
+    // (xem visibleSplitToIndex). Lấy thẳng xSplit làm số cột ghim thì file thù
+    // lao (ẩn cột A, xSplit=1) chỉ ghim đúng cột A đang ẩn -> cuộn ngang không
+    // có cột nào đứng yên, trong khi Excel ghim cột B.
     const view = (ws.views || [])[0] || {};
     const freeze =
       view.state === "frozen" && ((view.xSplit || 0) > 0 || (view.ySplit || 0) > 0)
-        ? { rows: view.ySplit || 0, cols: view.xSplit || 0 }
+        ? {
+            rows: visibleSplitToIndex(view.ySplit, rowHidden, rowCount),
+            cols: visibleSplitToIndex(view.xSplit, colHidden, colCount),
+          }
         : null;
 
     const drawings = drawingsBySheet[ws.name] || {};
